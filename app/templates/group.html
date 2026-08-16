@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ group.name }}{% endblock %}
+{% block content %}
+  <h1>{{ group.name }}</h1>
+  <p>You're identified as <strong>{{ me.name }}</strong>.
+    <form method="post" action="/g/{{ group.slug }}/switch" class="inline">
+      <button type="submit">Not you?</button>
+    </form>
+  </p>
+
+  <section>
+    <label for="link">Share this link</label>
+    <input type="text" id="link" readonly value="{{ request.url_for('group_dashboard', slug=group.slug) }}"
+           onclick="this.select()">
+  </section>
+
+  <section>
+    <h2>Members</h2>
+    <ul>
+      {% for m in members %}
+        <li>{{ m.name }}{% if m.id == me.id %} (you){% endif %}</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section>
+    <h2>Add a member</h2>
+    <form method="post" action="/g/{{ group.slug }}/members">
+      <label for="member_name">Name</label>
+      <input type="text" id="member_name" name="name" maxlength="80" required>
+      <button type="submit">Add</button>
+    </form>
+  </section>
+{% endblock %}

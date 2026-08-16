@@ -27,3 +27,9 @@ DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{_DEFAULT_SQLITE_PATH}
 # key, which invalidates existing sessions — fine in dev, never used in prod
 # because Render sets a real SECRET_KEY.
 SECRET_KEY = os.environ.get("SECRET_KEY", secrets.token_urlsafe(32))
+
+# A Secure cookie is not returned by the browser over plain http://, so
+# https_only=True would silently break identify on local dev (127.0.0.1 has
+# no TLS). Default False so `uvicorn --reload` works out of the box; the
+# production deploy (milestone 9) must set SESSION_HTTPS_ONLY=true.
+SESSION_HTTPS_ONLY = os.environ.get("SESSION_HTTPS_ONLY", "false").lower() == "true"

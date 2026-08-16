@@ -1,0 +1,77 @@
+/* Mobile-first: this gets used one-handed at a restaurant table. */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.4;
+  color: #1a1a1a;
+  background: #fafafa;
+}
+
+.wrap {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0.5rem 0;
+}
+
+h2 {
+  font-size: 1.1rem;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+form.inline {
+  display: inline;
+  margin: 0;
+}
+
+label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+input, select, button {
+  font-size: 1rem;
+  padding: 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+button {
+  background: #2a6df4;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
+
+button:active {
+  background: #1d54c4;
+}
+
+ul {
+  padding-left: 1.2rem;
+}
+
+.error {
+  color: #b00020;
+  font-weight: 600;
+}
+
+section {
+  margin: 1.5rem 0;
+}
