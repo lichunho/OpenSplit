@@ -1017,3 +1017,32 @@ def test_csv_export_unidentified_visitor_redirects(client: TestClient):
     response = fresh.get(f"/g/{slug}/export.csv", follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"] == f"/g/{slug}/identify"
+
+
+# ---------------------------------------------------------------------------
+# Mobile-first polish (milestone 8): graceful-degradation guarantees that
+# only a rendered-HTML check can catch — a future refactor could easily flip
+# these silently (e.g. un-hiding the copy button by default), which is
+# exactly the "dead button, no fallback" failure mode the plan calls out.
+# ---------------------------------------------------------------------------
+
+
+def test_identify_page_shows_empty_state_for_a_brand_new_group(client: TestClient):
+    slug = _create_group(client)
+    page = client.get(f"/g/{slug}/identify")
+    assert page.status_code == 200
+    assert "no one" in page.text.lower() and "joined" in page.text.lower()
+
+
+def test_group_page_copy_button_and_loading_indicator_are_hidden_without_js(client: TestClient):
+    # Both must be present-but-hidden by default: the `hidden` attribute is
+    # what makes JS-off and slow-clipboard-API degrade safely. The share
+    # link input itself must stay selectable as the manual-copy fallback.
+    slug = _create_group(client)
+    client.post(f"/g/{slug}/identify", data={"new_name": "Chris"}, follow_redirects=False)
+
+    page = client.get(f"/g/{slug}")
+    assert page.status_code == 200
+    assert '<button type="button" id="copy-link-btn" hidden>' in page.text
+    assert 'id="loading-indicator"' in page.text and "hidden>" in page.text
+    assert 'id="link" readonly' in page.text and 'onclick="this.select()"' in page.text

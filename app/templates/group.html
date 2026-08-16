@@ -9,11 +9,21 @@
     </form>
   </p>
 
+  <p class="primary-cta"><a class="button-link" href="/g/{{ group.slug }}/expenses/new">+ Add expense</a></p>
+
   <section>
     <label for="link">Share this link</label>
-    <input type="text" id="link" readonly value="{{ request.url_for('group_dashboard', slug=group.slug) }}"
-           onclick="this.select()">
-    <p><a href="/g/{{ group.slug }}/export.csv">Download as CSV</a></p>
+    <div class="share-link-row">
+      <input type="text" id="link" readonly value="{{ request.url_for('group_dashboard', slug=group.slug) }}"
+             onclick="this.select()">
+      <!-- Hidden until app.js confirms the Clipboard API actually works in
+           this context (it needs https, so it won't on plain http:// LAN
+           dev) — a button that's shown always works; the input above is
+           always the fallback (click to select, then copy manually). -->
+      <button type="button" id="copy-link-btn" hidden>Copy link</button>
+    </div>
+    <p id="copy-link-status" class="hint" role="status" aria-live="polite"></p>
+    <p><a href="/g/{{ group.slug }}/export.csv" download>Download as CSV</a></p>
   </section>
 
   {% macro dollars(cents) -%}
@@ -37,7 +47,7 @@
         {% endfor %}
       </ul>
     {% else %}
-      <p>No members yet.</p>
+      <p>No members yet — add someone below to get started.</p>
     {% endif %}
   </section>
 
@@ -57,7 +67,7 @@
     {% else %}
       <p>Everyone's settled up — no suggested payments.</p>
     {% endif %}
-    <p><a href="/g/{{ group.slug }}/settle">Settle up</a></p>
+    <p><a class="button-link button-link--secondary" href="/g/{{ group.slug }}/settle">Settle up</a></p>
   </section>
 
   <section>
@@ -80,7 +90,6 @@
 
   <section>
     <h2>Activity</h2>
-    <p><a href="/g/{{ group.slug }}/expenses/new">+ Add expense</a></p>
     {% if activity %}
       <ul class="expense-list">
         {% for item in activity %}
@@ -120,7 +129,7 @@
         {% endfor %}
       </ul>
     {% else %}
-      <p>No activity yet.</p>
+      <p>No activity yet — add your first expense above to get started.</p>
     {% endif %}
   </section>
 {% endblock %}

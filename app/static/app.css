@@ -46,10 +46,13 @@ label {
 }
 
 input, select, button {
-  font-size: 1rem;
+  /* 16px is deliberate, not just the rem default: below this iOS Safari
+     zooms the viewport in on focus, which is disorienting one-handed. */
+  font-size: 16px;
   padding: 0.6rem;
   border: 1px solid #ccc;
   border-radius: 6px;
+  min-height: 44px; /* thumb-sized tap target */
 }
 
 button {
@@ -57,10 +60,47 @@ button {
   color: #fff;
   border: none;
   cursor: pointer;
+  font-weight: 600;
 }
 
 button:active {
   background: #1d54c4;
+}
+
+/* A link styled to look and tap like a primary button — used for the main
+   call-to-action on a screen (Add expense, Settle up) where a plain text
+   link would be too small/easy to miss one-handed. */
+.button-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.6rem 1rem;
+  background: #2a6df4;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 6px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.button-link:active {
+  background: #1d54c4;
+}
+
+.button-link--secondary {
+  background: #fff;
+  color: #2a6df4;
+  border: 1px solid #2a6df4;
+}
+
+.button-link--secondary:active {
+  background: #eaf0fe;
+}
+
+.primary-cta {
+  margin: 1rem 0;
 }
 
 ul {
@@ -83,6 +123,55 @@ ul {
 
 section {
   margin: 1.5rem 0;
+}
+
+.share-link-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.share-link-row input {
+  flex: 1;
+  min-width: 0; /* lets the input shrink instead of forcing horizontal scroll at 360px */
+}
+
+.share-link-row button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+#copy-link-status:not(:empty) {
+  color: #1a7f37;
+  font-weight: 600;
+}
+
+.loading-indicator {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #fff3cd;
+  color: #664d03;
+  border-bottom: 1px solid #ffe69c;
+  padding: 0.6rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+/* Keeps a form's primary action reachable without scrolling on a long form
+   (the expense form especially) — it stays pinned to the bottom of the
+   viewport as the rest of the form scrolls underneath. */
+.submit-bar {
+  position: sticky;
+  bottom: 0;
+  background: #fafafa;
+  border-top: 1px solid #e5e5e5;
+  padding: 0.75rem 0;
+  margin-top: 0.5rem;
+}
+
+.submit-bar button {
+  width: 100%;
 }
 
 fieldset {
@@ -108,7 +197,14 @@ label.checkbox {
 
 label.radio input,
 label.checkbox input {
-  width: auto;
+  /* Exempt from the generic min-height:44px above — that rule is sized for
+     text inputs, and forcing it onto a checkbox/radio box stretches it into
+     an odd rectangle. The label itself (padding: 0.3rem 0, full-width flex
+     row) is the real tap target, so the native box can stay native-sized. */
+  width: 1.2rem;
+  height: 1.2rem;
+  min-height: 0;
+  padding: 0;
 }
 
 .participant-row {
@@ -147,6 +243,7 @@ label.checkbox input {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap; /* keeps a long description + the delete/restore button from forcing horizontal scroll */
   gap: 0.5rem;
   padding: 0.6rem 0;
   border-bottom: 1px solid #e5e5e5;
@@ -155,6 +252,11 @@ label.checkbox input {
 .expense-list li.deleted {
   color: #999;
   text-decoration: line-through;
+}
+
+.expense-desc {
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .expense-meta {
@@ -181,6 +283,15 @@ label.checkbox input {
 .transfer-list li {
   padding: 0.4rem 0;
   border-bottom: 1px solid #e5e5e5;
+}
+
+.transfer-list a {
+  display: block;
+  padding: 0.4rem 0;
+  margin: -0.4rem 0; /* cancels the li's own padding so the link is the full tap target, not just its text */
+  color: #2a6df4;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 .balance-positive {
