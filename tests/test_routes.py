@@ -889,3 +889,131 @@ def test_settle_pick_lists_all_other_members_not_just_suggestions(client: TestCl
     assert page.status_code == 200
     assert "Alex" in page.text
     assert "Sam" in page.text
+
+
+# ---------------------------------------------------------------------------
+# CSV export (milestone 7).
+# ---------------------------------------------------------------------------
+
+
+def test_csv_export_returns_200_with_correct_content_type(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "100.00", chris_id, [chris_id, alex_id, sam_id])
+
+    response = client.get(f"/g/{slug}/export.csv")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/csv; charset=utf-8"
+    assert "attachment" in response.headers.get("content-disposition", "").lower()
+    assert slug in response.headers.get("content-disposition", "")
+
+
+def test_csv_export_balances_reconcile_with_dashboard(client: TestClient):
+    # Plan verification step 10: Chris pays $100 dinner equal 3 ways; Alex pays
+    # $45 taxi exact 20/15/10 → Chris +46.67, Alex −3.34, Sam −43.33
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _setup_dinner_and_taxi(client, slug)
+
+    response = client.get(f"/g/{slug}/export.csv")
+    assert response.status_code == 200
+
+    import csv
+
+    reader = csv.reader(response.text.splitlines())
+    rows = list(reader)
+
+    # Find the Balances section
+    balances_idx = next(i for i, row in enumerate(rows) if row and row[0] == "Balances")
+    assert balances_idx is not None
+    assert rows[balances_idx + 1] == ["Member", "Balance"]
+
+    # Parse balance rows
+    balance_rows = {}
+    for i in range(balances_idx + 2, len(rows)):
+        if not rows[i] or not rows[i][0]:
+            break
+        name, balance_str = rows[i]
+        # Parse decimal balance string (e.g. "46.67") to cents (4667)
+        balance_cents = int(balance_str.replace(".", ""))
+        balance_rows[name] = balance_cents
+
+    # Verify exact balances from the scenario
+    assert balance_rows["Chris"] == 4667
+    assert balance_rows["Alex"] == -334
+    assert balance_rows["Sam"] == -4333
+    assert sum(balance_rows.values()) == 0
+
+
+def test_csv_handles_comma_and_quote_in_description(client: TestClient):
+    # Test that descriptions with commas and quotes survive the CSV round-trip.
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(
+        client, slug, 'Dinner, "fancy"', "100.00", chris_id, [chris_id, alex_id, sam_id]
+    )
+
+    response = client.get(f"/g/{slug}/export.csv")
+    assert response.status_code == 200
+
+    import csv
+
+    reader = csv.reader(response.text.splitlines())
+    rows = list(reader)
+
+    # Find the expense row and verify the description is correctly parsed
+    expenses_header_idx = next(i for i, row in enumerate(rows) if row and row[0] == "Expenses")
+    expense_rows = []
+    for i in range(expenses_header_idx + 2, len(rows)):
+        if not rows[i] or not rows[i][0]:
+            break
+        expense_rows.append(rows[i])
+
+    assert len(expense_rows) > 0
+    assert expense_rows[0][1] == 'Dinner, "fancy"'  # Description is second column
+
+
+def test_csv_soft_deleted_expense_excluded_from_balances(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Snacks", "30.00", chris_id, [chris_id, alex_id, sam_id])
+
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        expense = session.exec(select(Expense).where(Expense.group_id == group.id)).first()
+        expense_id = expense.id
+
+    client.post(f"/g/{slug}/expenses/{expense_id}/delete", follow_redirects=False)
+
+    response = client.get(f"/g/{slug}/export.csv")
+    assert response.status_code == 200
+
+    import csv
+
+    reader = csv.reader(response.text.splitlines())
+    rows = list(reader)
+
+    # Find the Balances section
+    balances_idx = next(i for i, row in enumerate(rows) if row and row[0] == "Balances")
+    assert rows[balances_idx + 1] == ["Member", "Balance"]
+
+    # Parse balance rows
+    balance_rows = {}
+    for i in range(balances_idx + 2, len(rows)):
+        if not rows[i] or not rows[i][0]:
+            break
+        name, balance_str = rows[i]
+        balance_cents = int(balance_str.replace(".", ""))
+        balance_rows[name] = balance_cents
+
+    # All balances should be zero since the only expense is deleted
+    assert all(b == 0 for b in balance_rows.values())
+
+
+def test_csv_export_unidentified_visitor_redirects(client: TestClient):
+    slug = _create_group(client)
+    client.post(f"{slug}/identify", data={"new_name": "Chris"}, follow_redirects=False)
+
+    fresh = TestClient(client.app)
+    response = fresh.get(f"/g/{slug}/export.csv", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/g/{slug}/identify"

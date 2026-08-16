@@ -17,9 +17,9 @@ from app.auth import (
 )
 from app.config import TEMPLATES_DIR
 from app.db import get_session
-from app.models import Expense, Group, Member, Settlement, Share
+from app.models import Group, Member, Settlement
 from app.money import net_balances, simplify
-from app.routes.expenses import expenses_for_group
+from app.queries import balance_inputs, expenses_for_group, get_members
 
 router = APIRouter()
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -29,42 +29,10 @@ def _get_group_or_none(slug: str, session: Session) -> Group | None:
     return session.exec(select(Group).where(Group.slug == slug)).first()
 
 
-def _get_members(session: Session, group_id: int) -> list[Member]:
-    # Group has no ORM relationship to Member (models.py defines none), so
-    # every route that needs the roster queries it explicitly.
-    return session.exec(select(Member).where(Member.group_id == group_id)).all()
-
-
 def _name_taken(session: Session, group_id: int, name: str) -> bool:
     # The UniqueConstraint on (group_id, name) is case-sensitive, so "chris"
     # and "Chris" would both insert; this check catches that in code.
-    return any(m.name.casefold() == name.casefold() for m in _get_members(session, group_id))
-
-
-def balance_inputs(session: Session, group_id: int):
-    """Query rows shaped exactly for money.net_balances's plain-tuple inputs,
-    filtered to deleted_at IS NULL throughout.
-
-    A soft-deleted expense's Share rows carry no deleted_at of their own, so
-    they can't be filtered directly — Share is joined to Expense and the
-    *expense's* deleted_at gates it. Forgetting this join would keep summing
-    a deleted expense's shares while dropping only its paid-amount side,
-    corrupting every balance by that expense's total.
-    """
-    expenses = session.exec(
-        select(Expense.payer_id, Expense.amount_cents)
-        .where(Expense.group_id == group_id, Expense.deleted_at.is_(None))
-    ).all()
-    shares = session.exec(
-        select(Share.member_id, Share.amount_cents)
-        .join(Expense, Share.expense_id == Expense.id)
-        .where(Expense.group_id == group_id, Expense.deleted_at.is_(None))
-    ).all()
-    settlements = session.exec(
-        select(Settlement.from_member_id, Settlement.to_member_id, Settlement.amount_cents)
-        .where(Settlement.group_id == group_id, Settlement.deleted_at.is_(None))
-    ).all()
-    return expenses, shares, settlements
+    return any(m.name.casefold() == name.casefold() for m in get_members(session, group_id))
 
 
 def _activity_feed(session: Session, group_id: int) -> list[dict]:
@@ -77,7 +45,7 @@ def _activity_feed(session: Session, group_id: int) -> list[dict]:
         {"type": "expense", "created_at": row["expense"].created_at, **row}
         for row in expenses_for_group(session, group_id)
     ]
-    members_by_id = {m.id: m.name for m in _get_members(session, group_id)}
+    members_by_id = {m.id: m.name for m in get_members(session, group_id)}
     settlements = session.exec(
         select(Settlement).where(Settlement.group_id == group_id).order_by(Settlement.created_at.desc())
     ).all()
@@ -118,7 +86,7 @@ def group_dashboard(slug: str, request: Request, result=Depends(require_member),
     if is_redirect(result):
         return result
     group, member = result
-    members = _get_members(session, group.id)
+    members = get_members(session, group.id)
 
     expenses, shares, settlements = balance_inputs(session, group.id)
     balances = net_balances(expenses, shares, settlements)
@@ -166,7 +134,7 @@ def identify_form(slug: str, request: Request, session: Session = Depends(get_se
     if group is None:
         return RedirectResponse(url="/", status_code=303)
     return templates.TemplateResponse(
-        request, "identify.html", {"group": group, "members": _get_members(session, group.id)}
+        request, "identify.html", {"group": group, "members": get_members(session, group.id)}
     )
 
 
@@ -187,7 +155,7 @@ def identify_submit(
         return templates.TemplateResponse(
             request,
             "identify.html",
-            {"group": group, "members": _get_members(session, group.id), "error": message},
+            {"group": group, "members": get_members(session, group.id), "error": message},
             status_code=400,
         )
 

@@ -13,6 +13,7 @@
     <label for="link">Share this link</label>
     <input type="text" id="link" readonly value="{{ request.url_for('group_dashboard', slug=group.slug) }}"
            onclick="this.select()">
+    <p><a href="/g/{{ group.slug }}/export.csv">Download as CSV</a></p>
   </section>
 
   {% macro dollars(cents) -%}

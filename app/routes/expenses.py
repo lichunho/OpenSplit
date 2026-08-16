@@ -4,20 +4,23 @@ exact splits call money.py's validate_exact. money.py is DB-free by design
 (see its module docstring), so the payer/participant group-membership check
 lives here, not there.
 """
+import csv
+import io
 import re
 from decimal import Decimal, DecimalException, ROUND_HALF_UP
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
 from app.auth import is_redirect, require_member
 from app.config import TEMPLATES_DIR
 from app.db import get_session
-from app.money import split_equal, validate_exact
-from app.models import Expense, Member, Share
+from app.money import net_balances, split_equal, validate_exact
+from app.models import Expense, Settlement, Share
+from app.queries import balance_inputs, expenses_for_group, format_cents, get_members
 
 router = APIRouter()
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -31,14 +34,6 @@ _MAX_AMOUNT_CENTS = 100_000_000
 # Decimal worth $100,000, and "NaN"/"Infinity" parse without raising, so a
 # later `cents <= 0` guard never catches them. Gate on plain digits first.
 _AMOUNT_RE = re.compile(r"-?\d+(\.\d+)?")
-
-
-def _get_members(session: Session, group_id: int) -> list[Member]:
-    # groups.py has its own private copy of this query (no ORM relationship
-    # exists to walk); expenses.py needs the same roster for its own
-    # membership checks, so it keeps its own rather than reaching into
-    # groups.py's internals for it.
-    return session.exec(select(Member).where(Member.group_id == group_id)).all()
 
 
 def parse_amount_cents(raw: str) -> int:
@@ -78,35 +73,12 @@ def _parse_share_cents(raw: str) -> int:
     return cents
 
 
-def expenses_for_group(session: Session, group_id: int) -> list[dict]:
-    """Every expense for the group (active and soft-deleted), each paired with
-    its payer's name and per-member shares, for the dashboard list."""
-    expenses = session.exec(
-        select(Expense).where(Expense.group_id == group_id).order_by(Expense.created_at.desc())
-    ).all()
-    members_by_id = {m.id: m.name for m in _get_members(session, group_id)}
-    rows = []
-    for expense in expenses:
-        shares = session.exec(select(Share).where(Share.expense_id == expense.id)).all()
-        rows.append(
-            {
-                "expense": expense,
-                "payer_name": members_by_id.get(expense.payer_id, "?"),
-                "shares": [
-                    {"name": members_by_id.get(s.member_id, "?"), "amount_cents": s.amount_cents}
-                    for s in shares
-                ],
-            }
-        )
-    return rows
-
-
 @router.get("/g/{slug}/expenses/new")
 def new_expense_form(slug: str, request: Request, result=Depends(require_member), session: Session = Depends(get_session)):
     if is_redirect(result):
         return result
     group, me = result
-    members = _get_members(session, group.id)
+    members = get_members(session, group.id)
     return templates.TemplateResponse(
         request,
         "expense_new.html",
@@ -130,7 +102,7 @@ async def create_expense(slug: str, request: Request, result=Depends(require_mem
     if is_redirect(result):
         return result
     group, me = result
-    members = _get_members(session, group.id)
+    members = get_members(session, group.id)
     member_ids = {m.id for m in members}
     form = await request.form()
 
@@ -246,3 +218,73 @@ def restore_expense(slug: str, expense_id: int, result=Depends(require_member), 
         session.add(expense)
         session.commit()
     return RedirectResponse(url=f"/g/{slug}", status_code=303)
+
+
+@router.get("/g/{slug}/export.csv")
+def export_csv(slug: str, request: Request, result=Depends(require_member), session: Session = Depends(get_session)):
+    if is_redirect(result):
+        return result
+    group, _me = result
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Expenses section
+    writer.writerow(["Expenses"])
+    writer.writerow(["Date", "Description", "Amount", "Payer", "Split Type", "Participants & Shares"])
+    for row in expenses_for_group(session, group.id):
+        expense = row["expense"]
+        if expense.deleted_at is not None:
+            continue
+        shares_str = "; ".join(
+            f"{s['name']}: {format_cents(s['amount_cents'])}"
+            for s in row["shares"]
+        )
+        writer.writerow([
+            expense.created_at.date().isoformat(),
+            expense.description,
+            format_cents(expense.amount_cents),
+            row["payer_name"],
+            expense.split_type,
+            shares_str,
+        ])
+
+    # Blank row before settlements section
+    writer.writerow([])
+    writer.writerow(["Settlements"])
+    writer.writerow(["Date", "From", "To", "Amount", "Note"])
+    settlements = session.exec(
+        select(Settlement)
+        .where(Settlement.group_id == group.id, Settlement.deleted_at.is_(None))
+        .order_by(Settlement.created_at.desc())
+    ).all()
+    members_by_id = {m.id: m.name for m in get_members(session, group.id)}
+    for settlement in settlements:
+        writer.writerow([
+            settlement.created_at.date().isoformat(),
+            members_by_id.get(settlement.from_member_id, "?"),
+            members_by_id.get(settlement.to_member_id, "?"),
+            format_cents(settlement.amount_cents),
+            settlement.note or "",
+        ])
+
+    # Blank row before balances section
+    writer.writerow([])
+    writer.writerow(["Balances"])
+    writer.writerow(["Member", "Balance"])
+    expenses, shares, settlement_rows = balance_inputs(session, group.id)
+    balances = net_balances(expenses, shares, settlement_rows)
+    members = get_members(session, group.id)
+    for member in sorted(members, key=lambda m: m.id):
+        balance_cents = balances.get(member.id, 0)
+        writer.writerow([
+            member.name,
+            format_cents(balance_cents),
+        ])
+
+    csv_data = output.getvalue()
+    return StreamingResponse(
+        iter([csv_data]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={group.slug}_expenses.csv"},
+    )

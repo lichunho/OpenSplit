@@ -10,37 +10,23 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.auth import is_redirect, require_member
 from app.config import TEMPLATES_DIR
 from app.db import get_session
 from app.money import net_balances, simplify
 from app.models import Member, Settlement
+from app.queries import balance_inputs, format_cents, get_members
 
 # Both are reused rather than re-implemented: parse_amount_cents owns the
 # strict digits-only gate that rejects "1e5"/"NaN"/"Infinity", and
 # balance_inputs owns the Share->Expense join that respects soft delete.
 # Duplicating either is how the two would silently drift apart.
 from app.routes.expenses import parse_amount_cents
-from app.routes.groups import balance_inputs
 
 router = APIRouter()
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
-
-
-def _get_members(session: Session, group_id: int) -> list[Member]:
-    # Same duplication expenses.py already carries relative to groups.py (see
-    # its own _get_members comment): no ORM relationship exists to walk, and
-    # each route module keeps its own copy of this query rather than reaching
-    # into a sibling module's internals for it.
-    return session.exec(select(Member).where(Member.group_id == group_id)).all()
-
-
-def _format_amount(cents: int) -> str:
-    """Integer cents -> plain decimal string ("1234" -> "12.34"), no currency
-    symbol — used for form field values, where the label already shows it."""
-    return "{}.{:02d}".format(cents // 100, cents % 100)
 
 
 def _suggested_transfers(session: Session, group_id: int, members: list[Member]):
@@ -58,7 +44,7 @@ def settle_pick(slug: str, request: Request, result=Depends(require_member), ses
     if is_redirect(result):
         return result
     group, me = result
-    members = _get_members(session, group.id)
+    members = get_members(session, group.id)
     members_by_id = {m.id: m for m in members}
 
     transfers = _suggested_transfers(session, group.id, members)
@@ -87,7 +73,7 @@ def settle_confirm(
     if is_redirect(result):
         return result
     group, me = result
-    members = _get_members(session, group.id)
+    members = get_members(session, group.id)
     payee = next((m for m in members if m.id == member_id), None)
     if payee is None or payee.id == me.id:
         # Not a real payee in this group (foreign id, stale link, or trying
@@ -102,7 +88,7 @@ def settle_confirm(
     )
 
     if suggested_cents > 0:
-        amount = _format_amount(suggested_cents)
+        amount = format_cents(suggested_cents)
         hint = "Settles you up with {}.".format(payee.name)
     else:
         # Not one of simplify()'s suggested transfers (a "someone else" pick)
@@ -135,7 +121,7 @@ async def create_settlement(slug: str, request: Request, result=Depends(require_
     if is_redirect(result):
         return result
     group, me = result
-    members = _get_members(session, group.id)
+    members = get_members(session, group.id)
     members_by_id = {m.id: m for m in members}
     form = await request.form()
 
@@ -197,7 +183,7 @@ async def create_settlement(slug: str, request: Request, result=Depends(require_
     # group_dashboard — no session/flash infra to touch (auth.py is out of
     # scope for this milestone). It adapts to which side of the ledger "me"
     # is on, since the payer is a dropdown and needn't be the current member.
-    amount_str = "{}{}".format(group.currency_symbol, _format_amount(amount_cents))
+    amount_str = "{}{}".format(group.currency_symbol, format_cents(amount_cents))
     if payer.id == me.id:
         flash = "Recorded: you paid {} {}.".format(payee.name, amount_str)
     elif payee.id == me.id:
