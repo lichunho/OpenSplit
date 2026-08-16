@@ -160,3 +160,28 @@ label.checkbox input {
   color: #1a1a1a;
   flex-shrink: 0;
 }
+
+.balance-list,
+.transfer-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.balance-list li,
+.transfer-list li {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.balance-positive {
+  color: #1a7f37;
+}
+
+.balance-negative {
+  color: #b00020;
+}
+
+.balance-zero {
+  color: #555;
+}

@@ -1,6 +1,6 @@
 """
-Create group, group dashboard (member list only — balances are milestone 5),
-and the when2meet-style identify/switch flow.
+Create group, group dashboard (balances, simplified debts, merged activity
+feed), and the when2meet-style identify/switch flow.
 """
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -17,7 +17,8 @@ from app.auth import (
 )
 from app.config import TEMPLATES_DIR
 from app.db import get_session
-from app.models import Group, Member
+from app.models import Expense, Group, Member, Settlement, Share
+from app.money import net_balances, simplify
 from app.routes.expenses import expenses_for_group
 
 router = APIRouter()
@@ -38,6 +39,59 @@ def _name_taken(session: Session, group_id: int, name: str) -> bool:
     # The UniqueConstraint on (group_id, name) is case-sensitive, so "chris"
     # and "Chris" would both insert; this check catches that in code.
     return any(m.name.casefold() == name.casefold() for m in _get_members(session, group_id))
+
+
+def _balance_inputs(session: Session, group_id: int):
+    """Query rows shaped exactly for money.net_balances's plain-tuple inputs,
+    filtered to deleted_at IS NULL throughout.
+
+    A soft-deleted expense's Share rows carry no deleted_at of their own, so
+    they can't be filtered directly — Share is joined to Expense and the
+    *expense's* deleted_at gates it. Forgetting this join would keep summing
+    a deleted expense's shares while dropping only its paid-amount side,
+    corrupting every balance by that expense's total.
+    """
+    expenses = session.exec(
+        select(Expense.payer_id, Expense.amount_cents)
+        .where(Expense.group_id == group_id, Expense.deleted_at.is_(None))
+    ).all()
+    shares = session.exec(
+        select(Share.member_id, Share.amount_cents)
+        .join(Expense, Share.expense_id == Expense.id)
+        .where(Expense.group_id == group_id, Expense.deleted_at.is_(None))
+    ).all()
+    settlements = session.exec(
+        select(Settlement.from_member_id, Settlement.to_member_id, Settlement.amount_cents)
+        .where(Settlement.group_id == group_id, Settlement.deleted_at.is_(None))
+    ).all()
+    return expenses, shares, settlements
+
+
+def _activity_feed(session: Session, group_id: int) -> list[dict]:
+    """Expenses and settlements merged into one list ordered by created_at
+    (newest first) — the plan's activity feed. Soft-deleted rows of either
+    kind stay in the list (the template strikes them through with a restore
+    control); only balance math excludes them. Settlements will simply be an
+    empty list until milestone 6 adds the routes that create them."""
+    expense_items = [
+        {"type": "expense", "created_at": row["expense"].created_at, **row}
+        for row in expenses_for_group(session, group_id)
+    ]
+    members_by_id = {m.id: m.name for m in _get_members(session, group_id)}
+    settlements = session.exec(
+        select(Settlement).where(Settlement.group_id == group_id).order_by(Settlement.created_at.desc())
+    ).all()
+    settlement_items = [
+        {
+            "type": "settlement",
+            "created_at": s.created_at,
+            "settlement": s,
+            "from_name": members_by_id.get(s.from_member_id, "?"),
+            "to_name": members_by_id.get(s.to_member_id, "?"),
+        }
+        for s in settlements
+    ]
+    return sorted(expense_items + settlement_items, key=lambda item: item["created_at"], reverse=True)
 
 
 @router.get("/")
@@ -64,14 +118,40 @@ def group_dashboard(slug: str, request: Request, result=Depends(require_member),
     if is_redirect(result):
         return result
     group, member = result
+    members = _get_members(session, group.id)
+
+    expenses, shares, settlements = _balance_inputs(session, group.id)
+    balances = net_balances(expenses, shares, settlements)
+    # Every current member gets a row, even one with zero activity so far —
+    # net_balances only returns members that appear in its inputs.
+    balances_by_member = {m.id: balances.get(m.id, 0) for m in members}
+    balance_rows = [
+        {"name": m.name, "is_me": m.id == member.id, "cents": balances_by_member[m.id]}
+        for m in members
+    ]
+
+    # simplify() only ever looks at sign, so the zero-filled dict above is an
+    # equivalent input to the raw net_balances() result for this call.
+    members_by_id = {m.id: m.name for m in members}
+    transfer_rows = [
+        {
+            "debtor_name": "You" if debtor_id == member.id else members_by_id.get(debtor_id, "?"),
+            "creditor_name": "You" if creditor_id == member.id else members_by_id.get(creditor_id, "?"),
+            "amount_cents": amount_cents,
+        }
+        for debtor_id, creditor_id, amount_cents in simplify(balances_by_member)
+    ]
+
     return templates.TemplateResponse(
         request,
         "group.html",
         {
             "group": group,
-            "members": _get_members(session, group.id),
+            "members": members,
             "me": member,
-            "expenses": expenses_for_group(session, group.id),
+            "activity": _activity_feed(session, group.id),
+            "balances": balance_rows,
+            "transfers": transfer_rows,
         },
     )
 

@@ -14,6 +14,49 @@
            onclick="this.select()">
   </section>
 
+  {% macro dollars(cents) -%}
+    {{ group.currency_symbol }}{{ "%d.%02d"|format(cents // 100, cents % 100) }}
+  {%- endmacro %}
+
+  <section>
+    <h2>Balances</h2>
+    {% if balances %}
+      <ul class="balance-list">
+        {% for row in balances %}
+          <li class="{% if row.cents > 0 %}balance-positive{% elif row.cents < 0 %}balance-negative{% else %}balance-zero{% endif %}">
+            {% if row.cents > 0 -%}
+              {{ 'You' if row.is_me else row.name }} {{ 'are' if row.is_me else 'is' }} owed {{ dollars(row.cents) }}
+            {%- elif row.cents < 0 -%}
+              {{ 'You' if row.is_me else row.name }} {{ 'owe' if row.is_me else 'owes' }} {{ dollars(-row.cents) }}
+            {%- else -%}
+              {{ 'You' if row.is_me else row.name }} {{ 'are' if row.is_me else 'is' }} settled up
+            {%- endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No members yet.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Suggested settlements</h2>
+    {% if transfers %}
+      <ul class="transfer-list">
+        {% for t in transfers %}
+          <li>{{ t.debtor_name }} pays {{ t.creditor_name }} {{ dollars(t.amount_cents) }}</li>
+        {% endfor %}
+      </ul>
+      <p class="hint">
+        These are one way to settle up, not the only way — paying anyone directly is fine,
+        balances net out the same either way. The suggestion can shift day to day even though
+        no one's balance above changed; that's normal.
+      </p>
+    {% else %}
+      <p>Everyone's settled up — no suggested payments.</p>
+    {% endif %}
+  </section>
+
   <section>
     <h2>Members</h2>
     <ul>
@@ -32,34 +75,49 @@
     </form>
   </section>
 
-  {% macro dollars(cents) -%}
-    {{ group.currency_symbol }}{{ "%d.%02d"|format(cents // 100, cents % 100) }}
-  {%- endmacro %}
   <section>
-    <h2>Expenses</h2>
+    <h2>Activity</h2>
     <p><a href="/g/{{ group.slug }}/expenses/new">+ Add expense</a></p>
-    {% if expenses %}
+    {% if activity %}
       <ul class="expense-list">
-        {% for item in expenses %}
-          <li class="{% if item.expense.deleted_at %}deleted{% endif %}">
-            <div class="expense-desc">
-              {{ item.expense.description }} — {{ dollars(item.expense.amount_cents) }}
-              <span class="expense-meta">paid by {{ item.payer_name }}</span>
-            </div>
-            {% if item.expense.deleted_at %}
-              <form method="post" action="/g/{{ group.slug }}/expenses/{{ item.expense.id }}/restore" class="inline">
-                <button type="submit">Restore</button>
-              </form>
-            {% else %}
-              <form method="post" action="/g/{{ group.slug }}/expenses/{{ item.expense.id }}/delete" class="inline">
-                <button type="submit">Delete</button>
-              </form>
-            {% endif %}
-          </li>
+        {% for item in activity %}
+          {% if item.type == "expense" %}
+            <li class="{% if item.expense.deleted_at %}deleted{% endif %}">
+              <div class="expense-desc">
+                {{ item.expense.description }} — {{ dollars(item.expense.amount_cents) }}
+                <span class="expense-meta">paid by {{ item.payer_name }}</span>
+              </div>
+              {% if item.expense.deleted_at %}
+                <form method="post" action="/g/{{ group.slug }}/expenses/{{ item.expense.id }}/restore" class="inline">
+                  <button type="submit">Restore</button>
+                </form>
+              {% else %}
+                <form method="post" action="/g/{{ group.slug }}/expenses/{{ item.expense.id }}/delete" class="inline">
+                  <button type="submit">Delete</button>
+                </form>
+              {% endif %}
+            </li>
+          {% else %}
+            <li class="{% if item.settlement.deleted_at %}deleted{% endif %}">
+              <div class="expense-desc">
+                {{ item.from_name }} paid {{ item.to_name }} {{ dollars(item.settlement.amount_cents) }}
+                <span class="expense-meta">settlement</span>
+              </div>
+              {% if item.settlement.deleted_at %}
+                <form method="post" action="/g/{{ group.slug }}/settlements/{{ item.settlement.id }}/restore" class="inline">
+                  <button type="submit">Restore</button>
+                </form>
+              {% else %}
+                <form method="post" action="/g/{{ group.slug }}/settlements/{{ item.settlement.id }}/delete" class="inline">
+                  <button type="submit">Delete</button>
+                </form>
+              {% endif %}
+            </li>
+          {% endif %}
         {% endfor %}
       </ul>
     {% else %}
-      <p>No expenses yet.</p>
+      <p>No activity yet.</p>
     {% endif %}
   </section>
 {% endblock %}

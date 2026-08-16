@@ -128,8 +128,12 @@ def test_add_member_rejects_a_case_and_space_differing_duplicate(client: TestCli
     client.post(f"/g/{slug}/members", data={"name": "Sam"}, follow_redirects=False)
     client.post(f"/g/{slug}/members", data={"name": "  sam "}, follow_redirects=False)
 
-    page = client.get(f"/g/{slug}")
-    assert page.text.lower().count(">sam<") == 1
+    # Assert the stored rows, not the rendered HTML — the page wording is free
+    # to change, the "one Sam per group" invariant is not.
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        names = [m.name for m in session.exec(select(Member).where(Member.group_id == group.id)).all()]
+    assert sorted(names) == ["Chris", "Sam"]
 
 
 def test_group_page_without_identity_redirects_to_identify(client: TestClient):
@@ -431,3 +435,190 @@ def test_payer_from_a_different_group_is_rejected(client: TestClient):
             select(Expense).where(Expense.group_id == group_a.id, Expense.description == "Sneaky")
         ).first()
     assert expense is None
+
+
+def _add_expense(
+    client: TestClient,
+    slug: str,
+    description: str,
+    amount: str,
+    payer_id: int,
+    participant_ids: list[int],
+    split_type: str = "equal",
+    shares: dict[int, str] | None = None,
+) -> None:
+    data = {
+        "description": description,
+        "amount": amount,
+        "payer_id": str(payer_id),
+        "split_type": split_type,
+        "participant_ids": [str(pid) for pid in participant_ids],
+    }
+    for member_id, share_amount in (shares or {}).items():
+        data[f"share_{member_id}"] = share_amount
+    response = client.post(f"/g/{slug}/expenses/new", data=data, follow_redirects=False)
+    assert response.status_code == 303
+
+
+def test_dashboard_balances_sum_to_zero_and_suggestion_is_stable_across_reloads(client: TestClient):
+    # Plan verification step 6: Chris pays $100 dinner split 3 ways, Alex pays
+    # $45 taxi exact 20/15/10.
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "100.00", chris_id, [chris_id, alex_id, sam_id])
+    _add_expense(
+        client,
+        slug,
+        "Taxi",
+        "45.00",
+        alex_id,
+        [chris_id, alex_id, sam_id],
+        split_type="exact",
+        shares={chris_id: "20.00", alex_id: "15.00", sam_id: "10.00"},
+    )
+
+    first = client.get(f"/g/{slug}")
+    second = client.get(f"/g/{slug}")
+    assert first.status_code == 200 and second.status_code == 200
+
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        expenses = session.exec(select(Expense).where(Expense.group_id == group.id)).all()
+        shares = []
+        for e in expenses:
+            shares.extend(session.exec(select(Share).where(Share.expense_id == e.id)).all())
+
+    from app.money import net_balances, simplify
+
+    balances = net_balances(
+        [(e.payer_id, e.amount_cents) for e in expenses],
+        [(s.member_id, s.amount_cents) for s in shares],
+        [],
+    )
+    assert sum(balances.values()) == 0
+
+    transfers = simplify(balances)
+    assert len(transfers) <= 2  # n - 1 for 3 members
+
+    # Reloading twice must yield an identical suggestion (deterministic tie-break).
+    import re
+
+    def suggestions(text: str) -> list[str]:
+        # Bounded at </section> so this compares the suggestions only, and
+        # can't silently pass or fail on the Members/Activity lists below it.
+        section = text.split("<h2>Suggested settlements</h2>", 1)[1].split("</section>", 1)[0]
+        return re.findall(r"<li>(.*?)</li>", section)
+
+    assert suggestions(first.text) == suggestions(second.text)
+    assert suggestions(first.text) != []  # sanity: there is something to compare
+
+
+def test_soft_delete_changes_balances_and_restore_returns_them_exactly(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "100.00", chris_id, [chris_id, alex_id, sam_id])
+    _add_expense(
+        client,
+        slug,
+        "Taxi",
+        "45.00",
+        alex_id,
+        [chris_id, alex_id, sam_id],
+        split_type="exact",
+        shares={chris_id: "20.00", alex_id: "15.00", sam_id: "10.00"},
+    )
+    # Dinner's equal 3-way split of $100 rotates its odd cent onto the second
+    # member by id (Alex): 3333 / 3334 / 3333 for chris / alex / sam.
+    # Combined with the exact taxi shares (2000/1500/1000):
+    #   chris: paid 10000, owes 3333+2000=5333 -> balance  4667
+    #   alex:  paid  4500, owes 3334+1500=4834 -> balance  -334
+    #   sam:   paid     0, owes 3333+1000=4333 -> balance -4333
+
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        taxi = session.exec(
+            select(Expense).where(Expense.group_id == group.id, Expense.description == "Taxi")
+        ).first()
+        taxi_id = taxi.id
+
+    from app.money import net_balances
+
+    def balances_now() -> dict[int, int]:
+        with Session(engine) as session:
+            group = session.exec(select(Group).where(Group.slug == slug)).first()
+            expenses = session.exec(
+                select(Expense).where(Expense.group_id == group.id, Expense.deleted_at.is_(None))
+            ).all()
+            shares = []
+            for e in expenses:
+                shares.extend(session.exec(select(Share).where(Share.expense_id == e.id)).all())
+        return net_balances(
+            [(e.payer_id, e.amount_cents) for e in expenses],
+            [(s.member_id, s.amount_cents) for s in shares],
+            [],
+        )
+
+    before = balances_now()
+    assert before == {chris_id: 4667, alex_id: -334, sam_id: -4333}
+
+    # The live dashboard must show the same figures the DB does.
+    page = client.get(f"/g/{slug}")
+    assert "$46.67" in page.text  # chris (me) is owed 4667 cents
+
+    client.post(f"/g/{slug}/expenses/{taxi_id}/delete", follow_redirects=False)
+    after_delete = balances_now()
+    assert after_delete == {chris_id: 6667, alex_id: -3334, sam_id: -3333}
+
+    client.post(f"/g/{slug}/expenses/{taxi_id}/restore", follow_redirects=False)
+    after_restore = balances_now()
+    assert after_restore == before
+
+
+def test_soft_deleted_expenses_shares_are_excluded_from_balances(client: TestClient):
+    # The subtle trap: Share rows carry no deleted_at of their own. A query
+    # that filters Expense.deleted_at IS NULL but sums Share rows without
+    # joining back through Expense would still charge everyone their share of
+    # a deleted expense while its paid-amount side correctly disappears —
+    # producing balances that don't sum to zero and never read "settled up".
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Snacks", "30.00", chris_id, [chris_id, alex_id, sam_id])
+
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        expense = session.exec(select(Expense).where(Expense.group_id == group.id)).first()
+        expense_id = expense.id
+
+    client.post(f"/g/{slug}/expenses/{expense_id}/delete", follow_redirects=False)
+
+    # Correct behaviour, exercised through the real route: everyone reads
+    # settled up, and no leftover "owe"/"owed" copy remains in that section.
+    page = client.get(f"/g/{slug}")
+    assert page.status_code == 200
+    balances_section = page.text.split("<h2>Balances</h2>", 1)[1].split("<h2>Suggested settlements</h2>", 1)[0]
+    assert balances_section.lower().count("settled up") == 3
+    assert "owe" not in balances_section.lower()
+
+    with Session(engine) as session:
+        # Soft delete never deletes rows: the Share rows are still there.
+        all_shares = session.exec(select(Share).where(Share.expense_id == expense_id)).all()
+    assert len(all_shares) == 3
+
+    from app.money import net_balances
+
+    # What a query that forgot the Share -> Expense join would produce: a
+    # visibly wrong, non-zero-summing set of balances (everyone in debt, no
+    # one owed, because the paid side vanished but the owed side didn't).
+    naive_balances = net_balances([], [(s.member_id, s.amount_cents) for s in all_shares], [])
+    assert sum(naive_balances.values()) != 0
+    assert all(cents < 0 for cents in naive_balances.values())
+
+
+def test_dashboard_renders_for_a_group_with_no_expenses(client: TestClient):
+    slug = _create_group(client)
+    client.post(f"/g/{slug}/identify", data={"new_name": "Chris"}, follow_redirects=False)
+
+    page = client.get(f"/g/{slug}")
+    assert page.status_code == 200
+    assert "settled up" in page.text.lower()
+    assert "no activity yet" in page.text.lower()
