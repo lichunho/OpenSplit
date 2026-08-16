@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from app.db import engine
-from app.models import Expense, Group, Member, Share
+from app.models import Expense, Group, Member, Settlement, Share
 
 
 def _create_group(client: TestClient, name: str = "Trip") -> str:
@@ -622,3 +622,270 @@ def test_dashboard_renders_for_a_group_with_no_expenses(client: TestClient):
     assert page.status_code == 200
     assert "settled up" in page.text.lower()
     assert "no activity yet" in page.text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Settle-up flow (milestone 6). Every scenario below shares the same setup as
+# test_soft_delete_changes_balances_and_restore_returns_them_exactly:
+#   chris: paid 10000, owes 5333 -> balance  4667
+#   alex:  paid  4500, owes 4834 -> balance  -334
+#   sam:   paid     0, owes 4333 -> balance -4333
+# simplify() on those balances pays the largest debtor first: sam -> chris
+# 4333, then alex -> chris 334.
+# ---------------------------------------------------------------------------
+
+
+def _setup_dinner_and_taxi(client: TestClient, slug: str) -> tuple[int, int, int]:
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "100.00", chris_id, [chris_id, alex_id, sam_id])
+    _add_expense(
+        client,
+        slug,
+        "Taxi",
+        "45.00",
+        alex_id,
+        [chris_id, alex_id, sam_id],
+        split_type="exact",
+        shares={chris_id: "20.00", alex_id: "15.00", sam_id: "10.00"},
+    )
+    return chris_id, alex_id, sam_id
+
+
+def _balances(slug: str) -> dict[int, int]:
+    from app.money import net_balances
+
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        expenses = session.exec(
+            select(Expense).where(Expense.group_id == group.id, Expense.deleted_at.is_(None))
+        ).all()
+        shares = []
+        for e in expenses:
+            shares.extend(session.exec(select(Share).where(Share.expense_id == e.id)).all())
+        settlements = session.exec(
+            select(Settlement).where(Settlement.group_id == group.id, Settlement.deleted_at.is_(None))
+        ).all()
+    return net_balances(
+        [(e.payer_id, e.amount_cents) for e in expenses],
+        [(s.member_id, s.amount_cents) for s in shares],
+        [(s.from_member_id, s.to_member_id, s.amount_cents) for s in settlements],
+    )
+
+
+def _identify_as(client: TestClient, slug: str, member_id: int) -> TestClient:
+    browser = TestClient(client.app)
+    browser.post(f"/g/{slug}/identify", data={"existing_member_id": str(member_id)}, follow_redirects=False)
+    return browser
+
+
+def test_settle_as_sam_accepting_default_zeroes_balance_and_drops_suggestion(client: TestClient):
+    # Plan verification step 7.
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _setup_dinner_and_taxi(client, slug)
+    sam_browser = _identify_as(client, slug, sam_id)
+
+    confirm = sam_browser.get(f"/g/{slug}/settle/{chris_id}")
+    assert confirm.status_code == 200
+    assert 'value="43.33"' in confirm.text  # pre-filled with the suggested figure
+
+    post = sam_browser.post(
+        f"/g/{slug}/settle",
+        data={"to_member_id": str(chris_id), "from_member_id": str(sam_id), "amount": "43.33"},
+        follow_redirects=False,
+    )
+    assert post.status_code == 303
+
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        settlement = session.exec(select(Settlement).where(Settlement.group_id == group.id)).first()
+    assert (settlement.from_member_id, settlement.to_member_id, settlement.amount_cents) == (sam_id, chris_id, 4333)
+
+    balances = _balances(slug)
+    assert balances[sam_id] == 0
+
+    from app.money import simplify
+
+    transfers = simplify(balances)
+    assert all(debtor_id != sam_id for debtor_id, _creditor_id, _amt in transfers)
+
+
+def test_settle_edited_downward_then_overpay_flips_sign(client: TestClient):
+    # Plan verification step 8.
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _setup_dinner_and_taxi(client, slug)
+    alex_browser = _identify_as(client, slug, alex_id)
+
+    confirm = alex_browser.get(f"/g/{slug}/settle/{chris_id}")
+    assert 'value="3.34"' in confirm.text  # Alex's suggested figure is 334 cents
+
+    downward = alex_browser.post(
+        f"/g/{slug}/settle",
+        data={"to_member_id": str(chris_id), "from_member_id": str(alex_id), "amount": "2.00"},
+        follow_redirects=False,
+    )
+    assert downward.status_code == 303
+
+    balances = _balances(slug)
+    # alex still owes 334 - 200 = 134 cents; chris's credit drops by the same 200.
+    assert balances == {chris_id: 4467, alex_id: -134, sam_id: -4333}
+    assert sum(balances.values()) == 0
+
+    sam_browser = _identify_as(client, slug, sam_id)
+    overpay = sam_browser.post(
+        f"/g/{slug}/settle",
+        data={"to_member_id": str(chris_id), "from_member_id": str(sam_id), "amount": "50.00"},
+        follow_redirects=False,
+    )
+    assert overpay.status_code == 303
+
+    balances_after_overpay = _balances(slug)
+    # sam owed 4333, paid 5000 -> the balance flips sign in sam's favour (667).
+    assert balances_after_overpay[sam_id] == 667
+    assert sum(balances_after_overpay.values()) == 0
+
+
+def test_delete_settlement_restores_prior_balances_exactly(client: TestClient):
+    # Plan verification step 9.
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _setup_dinner_and_taxi(client, slug)
+    before = _balances(slug)
+    assert before == {chris_id: 4667, alex_id: -334, sam_id: -4333}
+
+    sam_browser = _identify_as(client, slug, sam_id)
+    sam_browser.post(
+        f"/g/{slug}/settle",
+        data={"to_member_id": str(chris_id), "from_member_id": str(sam_id), "amount": "43.33"},
+        follow_redirects=False,
+    )
+    after_settle = _balances(slug)
+    assert after_settle[sam_id] == 0
+
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        settlement = session.exec(select(Settlement).where(Settlement.group_id == group.id)).first()
+        settlement_id = settlement.id
+
+    delete_response = client.post(f"/g/{slug}/settlements/{settlement_id}/delete", follow_redirects=False)
+    assert delete_response.status_code == 303
+    with Session(engine) as session:
+        settlement = session.get(Settlement, settlement_id)
+        assert settlement is not None  # soft delete never removes the row
+        assert settlement.deleted_at is not None
+    assert _balances(slug) == before
+
+    restore_response = client.post(f"/g/{slug}/settlements/{settlement_id}/restore", follow_redirects=False)
+    assert restore_response.status_code == 303
+    with Session(engine) as session:
+        settlement = session.get(Settlement, settlement_id)
+        assert settlement.deleted_at is None
+    assert _balances(slug) == after_settle
+
+
+def test_settle_amount_validation_rejected_without_500(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+
+    for bad_amount in ("0", "-5.00", "abc", "1e5", "NaN", "Infinity"):
+        response = client.post(
+            f"/g/{slug}/settle",
+            data={"to_member_id": str(alex_id), "from_member_id": str(chris_id), "amount": bad_amount},
+        )
+        assert response.status_code != 500, f"{bad_amount} should not 500"
+        assert response.status_code == 400
+
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        assert session.exec(select(Settlement).where(Settlement.group_id == group.id)).all() == []
+
+
+def test_settle_payer_equals_payee_is_rejected(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+
+    response = client.post(
+        f"/g/{slug}/settle",
+        data={"to_member_id": str(chris_id), "from_member_id": str(chris_id), "amount": "5.00"},
+    )
+    assert response.status_code != 500
+    assert response.status_code == 400
+    assert "different" in response.text.lower() or "error" in response.text.lower()
+
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        assert session.exec(select(Settlement).where(Settlement.group_id == group.id)).all() == []
+
+
+def test_settle_member_from_another_group_is_rejected(client: TestClient):
+    slug_a = _create_group(client, "Group A")
+    slug_b = _create_group(client, "Group B")
+    chris_id, alex_id, sam_id = _create_trio(client, slug_a)
+
+    other_browser = TestClient(client.app)
+    other_browser.post(f"/g/{slug_b}/identify", data={"new_name": "Intruder"}, follow_redirects=False)
+    intruder_id = _member_id(slug_b, "Intruder")
+
+    response = client.post(
+        f"/g/{slug_a}/settle",
+        data={"to_member_id": str(intruder_id), "from_member_id": str(chris_id), "amount": "5.00"},
+    )
+    assert response.status_code != 500
+    assert response.status_code == 400
+
+    with Session(engine) as session:
+        group_a = session.exec(select(Group).where(Group.slug == slug_a)).first()
+        assert session.exec(select(Settlement).where(Settlement.group_id == group_a.id)).all() == []
+
+
+def test_cross_group_settlement_delete_does_not_work(client: TestClient):
+    slug_a = _create_group(client, "Group A")
+    slug_b = _create_group(client, "Group B")
+    chris_id, alex_id, sam_id = _create_trio(client, slug_a)
+
+    client.post(
+        f"/g/{slug_a}/settle",
+        data={"to_member_id": str(alex_id), "from_member_id": str(chris_id), "amount": "5.00"},
+        follow_redirects=False,
+    )
+    with Session(engine) as session:
+        group_a = session.exec(select(Group).where(Group.slug == slug_a)).first()
+        settlement = session.exec(select(Settlement).where(Settlement.group_id == group_a.id)).first()
+        settlement_id = settlement.id
+
+    other_browser = TestClient(client.app)
+    other_browser.post(f"/g/{slug_b}/identify", data={"new_name": "Intruder"}, follow_redirects=False)
+    cross_delete = other_browser.post(f"/g/{slug_b}/settlements/{settlement_id}/delete", follow_redirects=False)
+    assert cross_delete.status_code == 303  # scoped no-op, not an error
+
+    with Session(engine) as session:
+        settlement = session.get(Settlement, settlement_id)
+        assert settlement.deleted_at is None  # untouched by the other group's attempt
+
+
+def test_settle_redirects_with_a_flash_message(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+
+    response = client.post(
+        f"/g/{slug}/settle",
+        data={"to_member_id": str(alex_id), "from_member_id": str(chris_id), "amount": "12.00"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    location = response.headers["location"]
+    assert location.startswith(f"/g/{slug}?flash=")
+
+    page = client.get(location)
+    assert "you paid Alex $12.00" in page.text
+
+
+def test_settle_pick_lists_all_other_members_not_just_suggestions(client: TestClient):
+    # Plan is explicit: the "someone else" list must be visible, not collapsed.
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _setup_dinner_and_taxi(client, slug)
+
+    # Chris is owed by everyone, so simplify() suggests no transfer *from*
+    # Chris — but Sam and Alex must still be pickable directly.
+    page = client.get(f"/g/{slug}/settle")
+    assert page.status_code == 200
+    assert "Alex" in page.text
+    assert "Sam" in page.text

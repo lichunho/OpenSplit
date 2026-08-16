@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Settle up — {{ group.name }}{% endblock %}
+{% block content %}
+  <p><a href="/g/{{ group.slug }}">&larr; {{ group.name }}</a></p>
+  <h1>Who are you paying?</h1>
+
+  {% macro dollars(cents) -%}
+    {{ group.currency_symbol }}{{ "%d.%02d"|format(cents // 100, cents % 100) }}
+  {%- endmacro %}
+
+  <section>
+    <h2>You owe</h2>
+    {% if suggested %}
+      <ul class="transfer-list">
+        {% for s in suggested %}
+          <li><a href="/g/{{ group.slug }}/settle/{{ s.member_id }}">Pay {{ s.name }} — {{ dollars(s.amount_cents) }}</a></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>You're all settled up — no one you owe right now.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Someone else</h2>
+    <p class="hint">
+      Paying anyone directly is fine, not just the suggestions above — balances
+      net out the same either way.
+    </p>
+    {% if others %}
+      <ul class="transfer-list">
+        {% for m in others %}
+          <li><a href="/g/{{ group.slug }}/settle/{{ m.id }}">Pay {{ m.name }}</a></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No other members yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}

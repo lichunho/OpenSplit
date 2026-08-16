@@ -2,6 +2,7 @@
 {% block title %}{{ group.name }}{% endblock %}
 {% block content %}
   <h1>{{ group.name }}</h1>
+  {% if flash %}<p class="flash">{{ flash }}</p>{% endif %}
   <p>You're identified as <strong>{{ me.name }}</strong>.
     <form method="post" action="/g/{{ group.slug }}/switch" class="inline">
       <button type="submit">Not you?</button>
@@ -55,6 +56,7 @@
     {% else %}
       <p>Everyone's settled up — no suggested payments.</p>
     {% endif %}
+    <p><a href="/g/{{ group.slug }}/settle">Settle up</a></p>
   </section>
 
   <section>

@@ -41,7 +41,7 @@ def _name_taken(session: Session, group_id: int, name: str) -> bool:
     return any(m.name.casefold() == name.casefold() for m in _get_members(session, group_id))
 
 
-def _balance_inputs(session: Session, group_id: int):
+def balance_inputs(session: Session, group_id: int):
     """Query rows shaped exactly for money.net_balances's plain-tuple inputs,
     filtered to deleted_at IS NULL throughout.
 
@@ -120,7 +120,7 @@ def group_dashboard(slug: str, request: Request, result=Depends(require_member),
     group, member = result
     members = _get_members(session, group.id)
 
-    expenses, shares, settlements = _balance_inputs(session, group.id)
+    expenses, shares, settlements = balance_inputs(session, group.id)
     balances = net_balances(expenses, shares, settlements)
     # Every current member gets a row, even one with zero activity so far —
     # net_balances only returns members that appear in its inputs.
@@ -152,6 +152,10 @@ def group_dashboard(slug: str, request: Request, result=Depends(require_member),
             "activity": _activity_feed(session, group.id),
             "balances": balance_rows,
             "transfers": transfer_rows,
+            # Carried on the settle-up redirect as a query param, not session
+            # state — settlements.py builds the message, this just displays
+            # whatever arrives (absent on every other route into this page).
+            "flash": request.query_params.get("flash"),
         },
     )
 

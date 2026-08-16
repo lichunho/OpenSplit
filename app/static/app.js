@@ -54,3 +54,36 @@
   updateVisibility();
   updateRemaining();
 })();
+
+// Settle-up step 2: live "Settles you up" / "You'll still owe" hint as the
+// amount is edited. Convenience only — the server doesn't depend on this;
+// with JS off, the hint stays at whatever the server rendered for the
+// pre-filled amount, and the form still submits and validates correctly.
+(function () {
+  var form = document.getElementById("settle-form");
+  if (!form) return;
+
+  var amountInput = form.querySelector("#amount");
+  var hint = document.getElementById("settle-hint");
+  var suggestedCents = parseInt(form.dataset.suggestedCents, 10) || 0;
+  var payeeName = form.dataset.payeeName || "";
+  if (!hint || suggestedCents <= 0) return;
+
+  function updateHint() {
+    var entered = Math.round((parseFloat(amountInput.value) || 0) * 100);
+    if (entered <= 0) {
+      hint.textContent = "";
+    } else if (entered === suggestedCents) {
+      hint.textContent = "Settles you up with " + payeeName + ".";
+    } else if (entered < suggestedCents) {
+      hint.textContent = "You'll still owe " + payeeName + " $" +
+        ((suggestedCents - entered) / 100).toFixed(2) + ".";
+    } else {
+      hint.textContent = payeeName + " will owe you $" +
+        ((entered - suggestedCents) / 100).toFixed(2) + ".";
+    }
+  }
+
+  amountInput.addEventListener("input", updateHint);
+  updateHint();
+})();

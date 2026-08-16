@@ -41,7 +41,7 @@ def _get_members(session: Session, group_id: int) -> list[Member]:
     return session.exec(select(Member).where(Member.group_id == group_id)).all()
 
 
-def _parse_amount_cents(raw: str) -> int:
+def parse_amount_cents(raw: str) -> int:
     """Decimal string -> integer cents. Never float() anywhere in this app.
     Rejects blank/non-numeric input, zero, negatives, and anything past the
     sanity ceiling — always with a readable ValueError, never a 500."""
@@ -62,7 +62,7 @@ def _parse_amount_cents(raw: str) -> int:
 
 
 def _parse_share_cents(raw: str) -> int:
-    """Same parsing as _parse_amount_cents, but zero (and a blank field) is
+    """Same parsing as parse_amount_cents, but zero (and a blank field) is
     allowed — an exact split can include someone who skipped the appetizer."""
     raw = (raw or "").strip()
     if not raw:
@@ -162,7 +162,7 @@ async def create_expense(slug: str, request: Request, result=Depends(require_mem
         return error("Enter a description.")
 
     try:
-        total_cents = _parse_amount_cents(form.get("amount", ""))
+        total_cents = parse_amount_cents(form.get("amount", ""))
     except ValueError as exc:
         return error(str(exc))
 

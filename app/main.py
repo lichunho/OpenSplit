@@ -15,6 +15,7 @@ from app.db import engine
 from app import models  # noqa: F401  (import registers tables on SQLModel.metadata)
 from app.routes.groups import router as groups_router
 from app.routes.expenses import router as expenses_router
+from app.routes.settlements import router as settlements_router
 
 
 @asynccontextmanager
@@ -41,6 +42,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(groups_router)
 app.include_router(expenses_router)
+app.include_router(settlements_router)
 
 
 @app.get("/healthz")
