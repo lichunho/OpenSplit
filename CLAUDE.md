@@ -24,7 +24,13 @@ Before any irreversible regeneration — schema migrations, retraining, mass rew
 A "generation" here is **the database schema and its contents**. v1 uses `create_all`, which silently no-ops on schema changes, so a pre-launch schema change means dropping and recreating the Neon branch — dump the old data to `archive/YYYY-MM-DD_<change>/` first if it is worth anything. Once real group data exists, Alembic stops being deferred and becomes the next milestone.
 
 ## Documentation
-Read the project's docs at session start. Update the relevant doc when a feature is added/changed or a file path moves. Skip doc updates for bug fixes and refactors that don't move files. [README.md](README.md) is the docs entry point; it is still a two-line stub and gets rewritten in milestone 9. It must state the cold-start behaviour (60–90s on a free-tier link) and the `create_all`/no-migrations decision, so both read as choices rather than bugs.
+Read the project's docs at session start. Update the relevant doc when a feature is added/changed or a file path moves. Skip doc updates for bug fixes and refactors that don't move files.
+
+[README.md](README.md) is the docs entry point and must keep stating the cold-start behaviour (60–90s on a free-tier link) and the `create_all`/no-migrations decision, so both read as choices rather than bugs. It links to three docs, each with one job — match the change to the doc:
+
+- [docs/concept.md](docs/concept.md) — what the app is and why; the access model, the trades, scope in/out. Update when a *decision* changes.
+- [docs/implementation.md](docs/implementation.md) — stack, module map, data model, core arithmetic, the three traps. Update when *structure* changes.
+- [docs/instructions.md](docs/instructions.md) — setup, testing, config vars, deploy, verification checklist, troubleshooting. Update when a *command, variable or step* changes.
 
 ## Git
 - **Never push** — the user does that manually. After meaningful changes, suggest a commit message.
