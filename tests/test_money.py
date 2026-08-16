@@ -162,6 +162,31 @@ def test_overpayment_flips_the_sign():
     assert simplify(balances) == [(CHRIS, ALEX, 166)]
 
 
+def test_settlement_edited_downward_leaves_the_correct_remainder():
+    # Plan verification step 8: Sam owes $43.33 but pays only $20.00.
+    balances = trip_balances(settlements=[(SAM, CHRIS, 2000)])
+    assert balances[SAM] == -2333
+    assert sum(balances.values()) == 0
+    # Sam still appears in the suggestions, for exactly the remainder.
+    assert (SAM, CHRIS, 2333) in simplify(balances)
+
+
+def test_soft_delete_and_restore_return_balances_exactly():
+    # Plan verification step 9: dropping the taxi expense's rows and putting
+    # them back must land on the same integers, not merely close ones.
+    before = trip_balances()
+
+    dinner_only = net_balances(
+        expenses=[(CHRIS, DINNER_CENTS)],
+        shares=list(split_equal(DINNER_CENTS, [CHRIS, ALEX, SAM]).items()),
+        settlements=[],
+    )
+    assert dinner_only == {CHRIS: 6667, ALEX: -3334, SAM: -3333}
+    assert sum(dinner_only.values()) == 0
+
+    assert trip_balances() == before
+
+
 def test_settlement_moves_the_payers_balance_up_and_the_payees_down():
     balances = net_balances([], [], [(ALEX, CHRIS, 2500)])
     assert balances == {ALEX: 2500, CHRIS: -2500}

@@ -2,10 +2,17 @@
 SQLModel tables. All money is integer cents — never floats, anywhere.
 """
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlmodel import Field, SQLModel, UniqueConstraint
+
+
+def _utcnow() -> datetime:
+    """Naive UTC. `datetime.utcnow()` is deprecated from 3.12, but switching to
+    an aware datetime would change these to TIMESTAMP WITH TIME ZONE — a schema
+    change. This keeps the existing naive-UTC storage without the deprecation."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Group(SQLModel, table=True):
@@ -14,7 +21,7 @@ class Group(SQLModel, table=True):
     slug: str = Field(default_factory=lambda: secrets.token_urlsafe(8), unique=True, index=True)
     name: str
     currency_symbol: str = "$"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class Member(SQLModel, table=True):
@@ -25,7 +32,7 @@ class Member(SQLModel, table=True):
     name: str
     # Nullable: a password is optional, set by the member themselves.
     password_hash: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class Expense(SQLModel, table=True):
@@ -37,7 +44,7 @@ class Expense(SQLModel, table=True):
     split_type: str  # "equal" | "exact"
     created_by_id: int = Field(foreign_key="member.id")
     note: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     # Soft delete: balance queries filter deleted_at IS NULL.
     deleted_at: Optional[datetime] = None
 
@@ -62,6 +69,6 @@ class Settlement(SQLModel, table=True):
     amount_cents: int
     created_by_id: int = Field(foreign_key="member.id")
     note: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     # Soft delete: undo control for a mistyped settlement.
     deleted_at: Optional[datetime] = None
