@@ -31,4 +31,35 @@
       <button type="submit">Add</button>
     </form>
   </section>
+
+  {% macro dollars(cents) -%}
+    {{ group.currency_symbol }}{{ "%d.%02d"|format(cents // 100, cents % 100) }}
+  {%- endmacro %}
+  <section>
+    <h2>Expenses</h2>
+    <p><a href="/g/{{ group.slug }}/expenses/new">+ Add expense</a></p>
+    {% if expenses %}
+      <ul class="expense-list">
+        {% for item in expenses %}
+          <li class="{% if item.expense.deleted_at %}deleted{% endif %}">
+            <div class="expense-desc">
+              {{ item.expense.description }} — {{ dollars(item.expense.amount_cents) }}
+              <span class="expense-meta">paid by {{ item.payer_name }}</span>
+            </div>
+            {% if item.expense.deleted_at %}
+              <form method="post" action="/g/{{ group.slug }}/expenses/{{ item.expense.id }}/restore" class="inline">
+                <button type="submit">Restore</button>
+              </form>
+            {% else %}
+              <form method="post" action="/g/{{ group.slug }}/expenses/{{ item.expense.id }}/delete" class="inline">
+                <button type="submit">Delete</button>
+              </form>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No expenses yet.</p>
+    {% endif %}
+  </section>
 {% endblock %}

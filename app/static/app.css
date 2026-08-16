@@ -75,3 +75,88 @@ ul {
 section {
   margin: 1.5rem 0;
 }
+
+fieldset {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+legend {
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0 0.3rem;
+}
+
+label.radio,
+label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 400;
+  padding: 0.3rem 0;
+}
+
+label.radio input,
+label.checkbox input {
+  width: auto;
+}
+
+.participant-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.participant-row .checkbox {
+  flex: 1;
+}
+
+.share-input {
+  width: 5.5rem;
+  /* Visible by default so exact amounts are reachable with JS disabled;
+     JS hides them for an equal split once it knows which one is picked. */
+}
+
+#expense-form.split-equal .share-input {
+  display: none;
+}
+
+.hint {
+  font-size: 0.9rem;
+  color: #555;
+  min-height: 1.2em;
+}
+
+.expense-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.expense-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.expense-list li.deleted {
+  color: #999;
+  text-decoration: line-through;
+}
+
+.expense-meta {
+  display: block;
+  font-size: 0.85rem;
+  color: #666;
+  text-decoration: none;
+}
+
+.expense-list button {
+  background: #eee;
+  color: #1a1a1a;
+  flex-shrink: 0;
+}

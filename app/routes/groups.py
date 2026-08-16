@@ -18,6 +18,7 @@ from app.auth import (
 from app.config import TEMPLATES_DIR
 from app.db import get_session
 from app.models import Group, Member
+from app.routes.expenses import expenses_for_group
 
 router = APIRouter()
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -66,7 +67,12 @@ def group_dashboard(slug: str, request: Request, result=Depends(require_member),
     return templates.TemplateResponse(
         request,
         "group.html",
-        {"group": group, "members": _get_members(session, group.id), "me": member},
+        {
+            "group": group,
+            "members": _get_members(session, group.id),
+            "me": member,
+            "expenses": expenses_for_group(session, group.id),
+        },
     )
 
 

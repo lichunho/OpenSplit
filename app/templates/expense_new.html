@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Add expense — {{ group.name }}{% endblock %}
+{% block content %}
+  <p><a href="/g/{{ group.slug }}">&larr; {{ group.name }}</a></p>
+  <h1>Add expense</h1>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <form method="post" action="/g/{{ group.slug }}/expenses/new" id="expense-form">
+    <label for="description">What was it?</label>
+    <input type="text" id="description" name="description" maxlength="200" value="{{ description }}" required>
+
+    <label for="amount">Amount ({{ group.currency_symbol }})</label>
+    <input type="text" inputmode="decimal" id="amount" name="amount" value="{{ amount }}" required>
+
+    <label for="payer_id">Who paid?</label>
+    <select id="payer_id" name="payer_id" required>
+      {% for m in members %}
+        <option value="{{ m.id }}" {% if payer_id == m.id|string %}selected{% endif %}>{{ m.name }}</option>
+      {% endfor %}
+    </select>
+
+    <fieldset>
+      <legend>Split</legend>
+      <label class="radio">
+        <input type="radio" name="split_type" value="equal" {% if split_type == 'equal' %}checked{% endif %}>
+        Equally
+      </label>
+      <label class="radio">
+        <input type="radio" name="split_type" value="exact" {% if split_type == 'exact' %}checked{% endif %}>
+        Exact amounts
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Who's in?</legend>
+      {% for m in members %}
+        <div class="participant-row">
+          <label class="checkbox">
+            <input type="checkbox" name="participant_ids" value="{{ m.id }}" class="participant-check"
+                   {% if m.id in selected_ids %}checked{% endif %}>
+            {{ m.name }}
+          </label>
+          <input type="text" inputmode="decimal" name="share_{{ m.id }}" class="share-input"
+                 placeholder="0.00" value="{{ share_values.get(m.id, '') }}">
+        </div>
+      {% endfor %}
+    </fieldset>
+
+    <p id="remaining" class="hint"></p>
+
+    <button type="submit">Save expense</button>
+  </form>
+{% endblock %}
