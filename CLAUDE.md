@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Data Privacy
-Never commit secrets, credentials, or private data. In this repo that means: `.env` (only `.env.example` is committed, with placeholder values), the live `SECRET_KEY` and `DATABASE_URL` — including the Neon pooled connection string, which embeds a password — local SQLite database files (`*.db` and their `-wal`/`-shm` siblings), `.venv/`, any `export.csv` downloaded from a real group, since it contains member names and spending history, and `archive/`, whose pre-migration database dumps hold that same data. **There is currently no `.gitignore`**; add one before the first code commit. When in doubt about whether a file is safe to commit, ask.
+Never commit secrets, credentials, or private data. In this repo that means: `.env` (only `.env.example` is committed, with placeholder values), the live `SECRET_KEY` and `DATABASE_URL` — including the Neon pooled connection string, which embeds a password — local SQLite database files (`*.db` and their `-wal`/`-shm` siblings), `.venv/`, any `export.csv` downloaded from a real group, since it contains member names and spending history, and `archive/`, whose pre-migration database dumps hold that same data. `.gitignore` covers all of these. When in doubt about whether a file is safe to commit, ask.
 
 ## Working style
 1. **Ask clarifying questions until you are absolutely sure how something should be implemented.** Do not guess on ambiguous requirements.
@@ -43,7 +43,7 @@ Full design rationale lives in the implementation plan at `~/.claude/plans/the-g
 
 ## Current state
 
-**No application code exists yet.** The repo holds only [README.md](README.md), [.gitattributes](.gitattributes), and this file. Everything below describes the agreed target structure, not what is on disk — verify before assuming a module exists.
+**All nine milestones of the implementation plan are built and committed** on the `build/v1` branch, with 75 tests passing. Not yet done: the plan's *deployed* verification — pushing to GitHub, wiring Render + Neon, and the 20-minute-idle test that is the only real proof trap #1 is fixed. `docker compose up` is also written but has never been executed (no Docker daemon was running).
 
 ## Stack
 
@@ -63,7 +63,7 @@ Node/npm are **not installed** on this machine; Python 3 and Docker are. The sta
 ## Commands
 
 ```bash
-py -m venv .venv && .venv/Scripts/activate
+py -3.13 -m venv .venv && .venv/Scripts/activate
 pip install -r requirements.txt
 pytest                                   # money math + route happy paths
 pytest tests/test_money.py::test_name    # single test
@@ -81,6 +81,7 @@ app/
   models.py     SQLModel tables
   money.py      PURE functions: split, balances, simplify  <- the testable core
   auth.py       session helpers, scrypt hash/verify, require_member
+  queries.py    read-side queries/formatting shared by more than one route
   routes/       groups.py, expenses.py, settlements.py
   templates/    base, index, identify, group, expense_new, settle_pick, settle_confirm
   static/       app.css, app.js, robots.txt
