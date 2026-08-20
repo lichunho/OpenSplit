@@ -13,7 +13,7 @@ load-bearing.
 | Sessions | Starlette `SessionMiddleware`, signed cookie | No session store to run |
 | Passwords | `hashlib.scrypt`, N=2¹⁴ r=8 p=1 | Stdlib; see trap #2 below |
 | Migrations | `create_all` (Alembic deferred) | See trap #3 below |
-| Hosting | Render free web service + Neon free Postgres | Render's disks are ephemeral and its own free Postgres is deleted after 30 days; Neon's free tier persists |
+| Hosting | Render free web service, or AWS Lambda behind a Function URL — Neon free Postgres either way | Render's disks are ephemeral and its own free Postgres is deleted after 30 days; Neon's free tier persists. Lambda runs the same image via the Web Adapter, trading ~60–90s cold starts for ~2.4s |
 | CSS | One token-driven stylesheet, dark mode via `prefers-color-scheme` | No build step; see the UI layer section |
 | JS | ~150 lines of vanilla JS | Expense-form toggle, settle hint, copy-link, cold-start indicator |
 
@@ -301,6 +301,12 @@ unreproducible on local SQLite.
 `tests/test_db.py` pins the branch selection, the normalisation (including that
 `?sslmode=require` survives), `NullPool`, and WAL — all offline, since building an engine
 opens no connection.
+
+`NullPool` turns out to serve double duty on the AWS Lambda target: a frozen execution
+environment must not hold a pooled socket across invocations either, for the same reason it
+must not hold one across a Neon autosuspend. The engine configuration needed no change to
+run there. It would need one on RDS or any always-on Postgres — no autosuspend means the
+per-request handshake buys nothing and a real pool with `pool_pre_ping` would be correct.
 
 ### 2. `hashlib.scrypt` raises `ValueError` at OWASP's recommended parameters
 

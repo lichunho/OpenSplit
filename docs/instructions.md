@@ -105,18 +105,24 @@ Tests need nothing: `tests/conftest.py` points `DATABASE_URL` at a throwaway SQL
 
 ## Deploying
 
-Two free-tier services: **Render** for the web app, **Neon** for Postgres. Render's own free
-Postgres is deleted after 30 days and its disks are ephemeral, which is why the database
-lives on Neon.
+Two supported targets, both free or near-free, both using **Neon** for Postgres. Render's
+own free Postgres is deleted after 30 days and its disks are ephemeral, which is why the
+database lives on Neon either way.
 
-### 1. Create the Neon database
+| | Render | AWS Lambda |
+|---|---|---|
+| Cold start | 60–90s | ~3–7s |
+| Cost | free | <$1 for two months (ECR storage) |
+| Setup | push + Blueprint | CLI, ~6 steps |
+
+### 1. Create the Neon database (both targets)
 
 Create a Neon project, then copy its **pooled** connection string — the hostname contains
 `-pooler`. This matters: the app sets `poolclass=NullPool` and lets Neon's PgBouncer own
 connection pooling. Using the unpooled host reintroduces the `SSL SYSCALL error: EOF
 detected` failure described in [implementation.md](implementation.md#the-three-production-only-traps).
 
-### 2. Deploy to Render
+### Option A: Render
 
 Push the repo to GitHub, then create a Blueprint deploy from `render.yaml`. It defines the
 service, the build and start commands, `/healthz` as the health check, and:
@@ -129,12 +135,146 @@ service, the build and start commands, `/healthz` as the health check, and:
 The start command binds `0.0.0.0` and Render's injected `$PORT`. A hardcoded port fails the
 health check silently.
 
-### 3. Expect a slow first request
+**Expect a slow first request.** The first request to a sleeping app takes roughly 60–90
+seconds. Render spins the service down after 15 minutes idle; Neon autosuspends after 5.
+Waking both is what that minute is. The app shows a "waking up" indicator rather than
+appearing broken. This is accepted free-tier behaviour, not a bug to fix.
 
-**The first request to a sleeping app takes roughly 60–90 seconds.** Render spins the
-service down after 15 minutes idle; Neon autosuspends after 5. Waking both is what that
-minute is. The app shows a "waking up" indicator rather than appearing broken. This is
-accepted free-tier behaviour, not a bug to fix.
+### Option B: AWS Lambda
+
+Runs the same container image on Lambda behind a Function URL, using the [AWS Lambda Web
+Adapter](https://github.com/aws/aws-lambda-web-adapter) baked into the `Dockerfile`. No
+application code differs between targets. At three users this sits inside Lambda's
+permanently free tier (1M requests and 400,000 GB-seconds per month), so the only real cost
+is ECR image storage.
+
+Prerequisites: `brew install awscli`, Docker Desktop running, then `aws configure` with
+region `us-east-1`.
+
+Don't deploy as the account root. Create an IAM user scoped to just this project and use a
+named profile, so a leaked key can touch this one function and nothing else — not billing,
+not other services:
+
+```bash
+aws iam create-user --user-name splitwise-deploy
+aws iam put-user-policy --user-name splitwise-deploy \
+  --policy-name splitwise-deploy-scoped --policy-document file://policy.json
+aws iam create-access-key --user-name splitwise-deploy   # write into ~/.aws/credentials
+```
+
+The policy grants ECR push/pull on the `splitwise-clone` repository, Lambda management on
+the `splitwise-clone` function, `iam:PassRole` on `splitwise-lambda-role` only, and read
+access to that function's logs. Note that `logs:DescribeLogGroups` has no resource-level
+support and must be granted on `"Resource": "*"` — scoping it to the log-group ARN denies it.
+
+Append `--profile splitwise` to the commands below, or `export AWS_PROFILE=splitwise`.
+
+```bash
+# 1. ECR repository, and log in to it
+aws ecr create-repository --repository-name splitwise-clone --region us-east-1
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+REGISTRY=$ACCOUNT.dkr.ecr.us-east-1.amazonaws.com
+aws ecr get-login-password --region us-east-1 \
+  | docker login --username AWS --password-stdin $REGISTRY
+
+# 2. Build and push. arm64 is native on Apple silicon — no emulation, and no
+#    "exec format error" from an arch mismatch with the function below.
+#    --provenance/--sbom must be off: buildx otherwise pushes an OCI *image index*
+#    bundling the image with an attestation manifest, and Lambda accepts only a
+#    single image manifest. It fails with "The image manifest, config or layer
+#    media type for the source image is not supported".
+docker buildx build --platform linux/arm64 --provenance=false --sbom=false \
+  -t $REGISTRY/splitwise-clone:v1 --push .
+
+# 3. Execution role. The app calls no AWS services, so basic logging is all it needs.
+aws iam create-role --role-name splitwise-lambda-role \
+  --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+aws iam attach-role-policy --role-name splitwise-lambda-role \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+# 4. The function. Timeout must exceed 3s (the default) or a cold start that also
+#    waits on a Neon resume will be killed mid-boot. Memory buys CPU, which buys
+#    a shorter cold start, and 1024 MB is still a rounding error against the free tier.
+aws lambda create-function --function-name splitwise-clone \
+  --package-type Image --code ImageUri=$REGISTRY/splitwise-clone:v1 \
+  --role arn:aws:iam::$ACCOUNT:role/splitwise-lambda-role \
+  --architectures arm64 --memory-size 1024 --timeout 30 \
+  --environment file://env.json
+
+# 5. Public Function URL. No API Gateway: it adds per-request cost after 12 months
+#    and buys nothing here.
+aws lambda create-function-url-config --function-name splitwise-clone --auth-type NONE
+
+#    BOTH permissions are required. Since October 2025 a function URL needs
+#    lambda:InvokeFunction in addition to lambda:InvokeFunctionUrl, and they must be
+#    added as separate statements. With only the first, every request returns a bare
+#    403 "Forbidden" even though AuthType is NONE and the policy looks correct —
+#    there is nothing in the policy output to suggest what is missing.
+aws lambda add-permission --function-name splitwise-clone \
+  --statement-id FunctionURLAllowPublicAccess --action lambda:InvokeFunctionUrl \
+  --principal '*' --function-url-auth-type NONE
+aws lambda add-permission --function-name splitwise-clone \
+  --statement-id UrlPolicyInvokeFunction --action lambda:InvokeFunction \
+  --principal '*' --invoked-via-function-url
+```
+
+Step 4 reads `env.json` from a file rather than taking `--environment` inline, because the
+value embeds the Neon password and an inline flag would land in shell history. Write it,
+use it, delete it — and never commit it:
+
+```json
+{"Variables":{"DATABASE_URL":"postgresql://...-pooler.../db?sslmode=require",
+              "SECRET_KEY":"<python3 -c 'import secrets;print(secrets.token_urlsafe(32))'>",
+              "SESSION_HTTPS_ONLY":"true"}}
+```
+
+Public access with `--auth-type NONE` is correct here rather than an oversight: the link is
+the credential, exactly as on Render, and `robots.txt` disallows all crawling.
+
+**Redeploying after a code change:** rebuild and push the image, then
+`aws lambda update-function-code --function-name splitwise-clone --image-uri $REGISTRY/splitwise-clone:v2`.
+Lambda resolves image tags to a digest at deploy time, so reusing the `:v1` tag will *not*
+pick up a new image — bump the tag.
+
+**If the URL 403s,** check the permissions above before anything else. To tell a broken
+function apart from a blocked URL, invoke it directly — this bypasses URL authorization
+entirely, so a 200 here plus a 403 through the URL means the problem is permissions, not
+your code:
+
+```bash
+aws lambda invoke --function-name splitwise-clone --region us-east-1 \
+  --payload '{"version":"2.0","rawPath":"/healthz","requestContext":{"http":{"method":"GET","path":"/healthz"}},"headers":{},"isBase64Encoded":false}' \
+  /tmp/out.json && cat /tmp/out.json
+```
+
+**Expect a short cold start.** Measured at ~2.4s with both the Lambda sandbox and Neon cold,
+against ~260ms warm. The first request after deploying a new image is much slower (~13s
+observed: 9.8s init to pull the image and run `create_all`, plus 2.9s handler) — that init
+sits close to Lambda's 10s ceiling, which is why `AWS_LWA_ASYNC_INIT=true` is set in the
+Dockerfile. If steady-state cold starts exceed 10s, raise `--memory-size` to 1769 (a full
+vCPU) before changing anything else.
+
+Measure it properly from Lambda's own records rather than by timing `curl`, which cannot
+tell a cold invocation from a warm one:
+
+```bash
+aws logs filter-log-events --log-group-name /aws/lambda/splitwise-clone \
+  --filter-pattern "Init Duration" --query 'events[].message' --output text
+```
+
+**Teardown.** Only ECR accrues charges while idle, but delete all of it:
+
+```bash
+aws lambda delete-function --function-name splitwise-clone
+aws ecr delete-repository --repository-name splitwise-clone --force
+aws logs delete-log-group --log-group-name /aws/lambda/splitwise-clone
+aws iam detach-role-policy --role-name splitwise-lambda-role \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+aws iam delete-role --role-name splitwise-lambda-role
+```
+
+If the group holds real data by then, export it first — see [Schema changes](#schema-changes)
+and the archive rule in [CLAUDE.md](../CLAUDE.md).
 
 ## Verifying a deployment
 
