@@ -75,6 +75,34 @@ cookie ships without the `Secure` flag.
 Real secrets never belong in the repo. `.env`, `*.db`, `.venv/`, `export.csv` and
 `archive/` are all gitignored.
 
+## Schema changes
+
+`create_all` builds missing tables but never alters existing ones (trap #3), so a new column
+has to be added by hand until Alembic arrives. For a **nullable** column this is one
+statement, identical on SQLite and Postgres, and it keeps every existing row in place:
+
+```bash
+# Back up first — WAL-aware, so it's consistent even mid-write.
+mkdir -p archive/$(date +%F)_<short-description>
+sqlite3 app.db ".backup 'archive/$(date +%F)_<short-description>/app.db'"
+
+# Apply. Goes through app.db's engine, so it uses the same normalised
+# DATABASE_URL the app does — SQLite locally, Postgres in prod.
+python -c "
+from sqlalchemy import text
+from app.db import engine
+with engine.begin() as conn:
+    conn.execute(text('ALTER TABLE expense ADD COLUMN category VARCHAR'))
+"
+```
+
+Re-running raises "duplicate column name" — SQLite has no `ADD COLUMN IF NOT EXISTS`, so
+that error means it's already applied, not that something is broken. Postgres does support
+`IF NOT EXISTS`, which makes the same statement safely repeatable there.
+
+Tests need nothing: `tests/conftest.py` points `DATABASE_URL` at a throwaway SQLite file that
+`create_all` builds from scratch on every run.
+
 ## Deploying
 
 Two free-tier services: **Render** for the web app, **Neon** for Postgres. Render's own free
@@ -147,9 +175,17 @@ since one browser holds one identity per group.
    and only stops someone else acting as you.
 4. **Add expenses** as they happen. Equal is the default; switch to exact when the split
    isn't even.
-5. **Settle up** when you're squaring away. The app suggests who to pay, but paying anyone
+5. **Categorise them** with the optional Category dropdown. It lists the categories this
+   group already uses — a new group has none — plus **Custom…**, which asks for a name and
+   adds it to the list for this group only. Casing is matched for you, so entering "food"
+   joins the existing "Food" rather than starting a second one.
+6. **Filter the feed** with the tabs above the activity list: one per category in use, plus
+   All and Uncategorized, each with a total. The tabs are ordinary links, so they're
+   bookmarkable and survive a refresh. **Balances and suggested settlements always show the
+   whole group** — filtering never changes what anyone owes.
+7. **Settle up** when you're squaring away. The app suggests who to pay, but paying anyone
    directly is fine — balances net out the same either way.
-6. **Export to CSV** any time.
+8. **Export to CSV** any time. The Expenses section carries a Category column.
 
 Mistyped something? Everything is soft-deleted, so **delete and restore both work** on
 expenses and settlements.
@@ -169,9 +205,13 @@ hidden over plain `http://` on a LAN IP. The link input is still selectable — 
 copy manually.
 
 **A page 500s after a schema change.** This is trap #3. `create_all` does not alter existing
-tables, so a new column exists in the models and not in the database. Pre-launch, dump the
-database to `archive/YYYY-MM-DD_<description>/`, drop and recreate the Neon branch, and let
-`create_all` rebuild it. Once there's data worth keeping, the answer is Alembic instead.
+tables, so a new column exists in the models and not in the database. For a nullable column,
+back up and `ALTER TABLE ... ADD COLUMN` — see [Schema changes](#schema-changes) — which
+keeps the existing data. Only a change that can't be expressed that way needs the old
+drop-and-recreate route: dump to `archive/YYYY-MM-DD_<description>/`, recreate the Neon
+branch, let `create_all` rebuild it. Either way the statement must be run against **Neon as
+well as local** before the new code deploys, or every page 500s on the missing column. Once
+this happens often enough to be annoying, the answer is Alembic.
 
 ---
 

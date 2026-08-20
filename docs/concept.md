@@ -52,6 +52,20 @@ you don't fully trust — this is the wrong tool.
   suggests the shortest set of payments that clears everyone.
 - **Recorded settlements.** The app records that money moved. It does not move money —
   there are no payment rails, by choice.
+- **Categories, and a filtered view per category.** Pick from a dropdown of the categories
+  this group already uses, or choose **Custom…** and name a new one. The dashboard grows a
+  tab per category in use, so "what did we actually spend on food?" is one click, with a
+  total under the list.
+
+  Three choices worth naming. There is **no built-in category list** — a group starts with
+  none and accumulates exactly the ones it names, because a shipped list of suggestions is
+  clutter for the trips that don't use them. There is **no category management screen**
+  either: categories are just text on an expense, so they appear when first named and
+  disappear when nothing uses them, with nothing to rename, seed or clean up. And the filter
+  narrows **only the activity list** — balances and suggested settlements always show the
+  whole group. A per-category "balance" would be a number that looks spendable but that
+  nobody actually owes, which is exactly the kind of plausible-but-wrong figure this app is
+  built to avoid.
 - **CSV export.** So the data is yours and the ledger is auditable outside the app.
 - **Soft delete with undo.** Nothing is ever really deleted, because a mistyped expense is
   the most common error in an app like this.

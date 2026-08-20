@@ -6,6 +6,8 @@
   if (!form) return;
 
   var amountInput = form.querySelector("#amount");
+  var categorySelect = form.querySelector("#category");
+  var customCategory = form.querySelector("#custom_category");
   var splitInputs = form.querySelectorAll('input[name="split_type"]');
   var shareInputs = form.querySelectorAll(".share-input");
   var remaining = document.getElementById("remaining");
@@ -22,6 +24,13 @@
     form.classList.toggle("split-exact", exact);
     form.classList.toggle("split-equal", !exact);
     if (!exact && remaining) remaining.textContent = "";
+  }
+
+  // The custom-category box is only relevant when "Custom…" is the selection.
+  // Same mechanism as updateVisibility: toggle a class, let the stylesheet do
+  // the hiding, so nothing here is load-bearing for the form to work.
+  function updateCategoryVisibility() {
+    form.classList.toggle("category-known", categorySelect.value !== "__custom__");
   }
 
   function updateRemaining() {
@@ -43,6 +52,12 @@
       updateRemaining();
     });
   }
+  categorySelect.addEventListener("change", function () {
+    updateCategoryVisibility();
+    // Picking "Custom…" is a request to type a name, so put the caret there
+    // rather than making it a second click.
+    if (categorySelect.value === "__custom__" && customCategory) customCategory.focus();
+  });
   amountInput.addEventListener("input", updateRemaining);
   for (var j = 0; j < shareInputs.length; j++) {
     shareInputs[j].addEventListener("input", updateRemaining);
@@ -52,6 +67,7 @@
   });
 
   updateVisibility();
+  updateCategoryVisibility();
   updateRemaining();
 })();
 

@@ -17,9 +17,9 @@ from app.auth import (
 )
 from app.config import TEMPLATES_DIR
 from app.db import get_session
-from app.models import Group, Member, Settlement
+from app.models import Expense, Group, Member, Settlement
 from app.money import net_balances, simplify
-from app.queries import balance_inputs, expenses_for_group, get_members
+from app.queries import balance_inputs, expenses_for_group, get_members, used_categories
 
 router = APIRouter()
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -35,12 +35,17 @@ def _name_taken(session: Session, group_id: int, name: str) -> bool:
     return any(m.name.casefold() == name.casefold() for m in get_members(session, group_id))
 
 
-def _activity_feed(session: Session, group_id: int) -> list[dict]:
+def _activity_feed(session: Session, group_id: int, category: str | None = None) -> list[dict]:
     """Expenses and settlements merged into one list ordered by created_at
     (newest first) — the plan's activity feed. Soft-deleted rows of either
     kind stay in the list (the template strikes them through with a restore
     control); only balance math excludes them. Settlements will simply be an
-    empty list until milestone 6 adds the routes that create them."""
+    empty list until milestone 6 adds the routes that create them.
+
+    `category` narrows the feed and nothing else: None shows everything, a
+    name shows that category, and "" shows the uncategorized ones. Balances
+    are computed from balance_inputs, which never sees this filter — what
+    someone owes can't depend on which tab you happen to be looking at."""
     expense_items = [
         {"type": "expense", "created_at": row["expense"].created_at, **row}
         for row in expenses_for_group(session, group_id)
@@ -59,6 +64,13 @@ def _activity_feed(session: Session, group_id: int) -> list[dict]:
         }
         for s in settlements
     ]
+    if category is not None:
+        expense_items = [
+            item for item in expense_items if (item["expense"].category or "") == category
+        ]
+        # A settlement has no category, so it belongs to no tab but "All".
+        settlement_items = []
+
     return sorted(expense_items + settlement_items, key=lambda item: item["created_at"], reverse=True)
 
 
@@ -87,6 +99,18 @@ def group_dashboard(slug: str, request: Request, result=Depends(require_member),
         return result
     group, member = result
     members = get_members(session, group.id)
+
+    # Three states, and no sentinel value needed for the third: a category can
+    # never be the empty string (_canonical_category maps blank to None), so
+    # absent -> everything, "" -> uncategorized only, "Food" -> that category.
+    active_category = request.query_params.get("category")
+    feed = _activity_feed(session, group.id, active_category)
+    # Whether the Uncategorized tab is worth rendering at all. Asked as its own
+    # one-column query rather than off `feed`, which the filter above may have
+    # already narrowed to a single category.
+    has_uncategorized = session.exec(
+        select(Expense.id).where(Expense.group_id == group.id, Expense.category.is_(None))
+    ).first() is not None
 
     expenses, shares, settlements = balance_inputs(session, group.id)
     balances = net_balances(expenses, shares, settlements)
@@ -117,7 +141,17 @@ def group_dashboard(slug: str, request: Request, result=Depends(require_member),
             "group": group,
             "members": members,
             "me": member,
-            "activity": _activity_feed(session, group.id),
+            "activity": feed,
+            "active_category": active_category,
+            "used_categories": used_categories(session, group.id),
+            "has_uncategorized": has_uncategorized,
+            # Only rendered under an active filter, so it reads as "the Food
+            # tab totals $412.50", never as a balance.
+            "filtered_total_cents": sum(
+                item["expense"].amount_cents
+                for item in feed
+                if item["type"] == "expense" and item["expense"].deleted_at is None
+            ),
             "balances": balance_rows,
             "transfers": transfer_rows,
             # Carried on the settle-up redirect as a query param, not session

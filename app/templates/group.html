@@ -23,6 +23,26 @@
   <div class="dashboard">
     <section class="card">
       <h2>Activity</h2>
+
+      {# Plain links, not JS: the filter survives a refresh, is bookmarkable,
+         and works with scripting off. The "All" tab drops the query param
+         entirely; the Uncategorized tab sends it empty, which no real
+         category can ever be. #}
+      {% if used_categories or has_uncategorized %}
+        <nav class="filter-tabs" aria-label="Filter activity by category">
+          <a class="filter-tab {% if active_category is none %}is-active{% endif %}"
+             href="/g/{{ group.slug }}">All</a>
+          {% for c in used_categories %}
+            <a class="filter-tab {% if active_category == c %}is-active{% endif %}"
+               href="/g/{{ group.slug }}?category={{ c|urlencode }}">{{ c }}</a>
+          {% endfor %}
+          {% if has_uncategorized %}
+            <a class="filter-tab {% if active_category == '' %}is-active{% endif %}"
+               href="/g/{{ group.slug }}?category=">Uncategorized</a>
+          {% endif %}
+        </nav>
+      {% endif %}
+
       {% if activity %}
         <ul class="expense-list">
           {% for item in activity %}
@@ -31,7 +51,8 @@
                 <div class="activity-main">
                   <div class="expense-desc">
                     <span class="activity-title">{{ item.expense.description }}</span>
-                    <span class="expense-meta">paid by {{ item.payer_name }}</span>
+                    <span class="expense-meta">paid by {{ item.payer_name }}{% if item.expense.category %}
+                      <span class="category-chip">{{ item.expense.category }}</span>{% endif %}</span>
                   </div>
                   <span class="money">{{ dollars(item.expense.amount_cents) }}</span>
                 </div>
@@ -68,6 +89,14 @@
             {% endif %}
           {% endfor %}
         </ul>
+        {% if active_category is not none %}
+          <p class="filter-total">
+            {{ active_category or 'Uncategorized' }} total
+            <span class="money">{{ dollars(filtered_total_cents) }}</span>
+          </p>
+        {% endif %}
+      {% elif active_category is not none %}
+        <p>Nothing in {{ active_category or 'Uncategorized' }} yet.</p>
       {% else %}
         <p>No activity yet — add your first expense above to get started.</p>
       {% endif %}

@@ -44,6 +44,10 @@ class Expense(SQLModel, table=True):
     split_type: str  # "equal" | "exact"
     created_by_id: int = Field(foreign_key="member.id")
     note: Optional[str] = None
+    # Free text, not a foreign key to a categories table: a category exists
+    # the moment someone types one. NULL means uncategorized, which is what
+    # every expense predating this column reads back as.
+    category: Optional[str] = None
     created_at: datetime = Field(default_factory=_utcnow)
     # Soft delete: balance queries filter deleted_at IS NULL.
     deleted_at: Optional[datetime] = None

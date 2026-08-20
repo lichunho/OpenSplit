@@ -23,7 +23,13 @@ from app.config import TEMPLATES_DIR
 from app.db import get_session
 from app.money import net_balances, split_equal, validate_exact
 from app.models import Expense, Settlement, Share
-from app.queries import balance_inputs, expenses_for_group, format_cents, get_members
+from app.queries import (
+    balance_inputs,
+    expenses_for_group,
+    format_cents,
+    get_members,
+    used_categories,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -32,6 +38,15 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 # parsing note. Anything above this is almost certainly a typo (missing a
 # decimal point), not a real trip expense.
 _MAX_AMOUNT_CENTS = 100_000_000
+
+# Matches the maxlength on the form's custom-category input.
+_MAX_CATEGORY_LEN = 40
+
+# The category <select>'s "Custom…" option, which reveals a text field for a
+# name that isn't on the list yet. Rejected as a category name below, so it
+# can never also be a stored category — an option whose value is the sentinel
+# would be read back as "Custom…" on the next render.
+_CUSTOM_CATEGORY = "__custom__"
 
 # Decimal() accepts far more than a money field should: "1e5" is a valid
 # Decimal worth $100,000, and "NaN"/"Infinity" parse without raising, so a
@@ -76,10 +91,45 @@ def _parse_share_cents(raw: str) -> int:
     return cents
 
 
-def _validated_expense(form, member_ids: set[int]) -> tuple[str, int, str, int, dict[int, int]]:
+def _chosen_category(form, known: list[str]) -> str | None:
+    """Read the category picker: a <select> of the group's existing categories,
+    plus a text field used when its "Custom…" option is chosen. A new group
+    starts with an empty list — there are no built-in categories.
+
+    Blank -> None (uncategorized); a listed name -> itself; the sentinel -> the
+    name typed alongside it, folded onto an existing spelling so "food" joins
+    yesterday's "Food" rather than opening a second tab next to it.
+
+    The select is checked against `known` for the same reason payer_id is
+    checked against the roster: a <select> constrains the browser, not a
+    hand-written POST."""
+    chosen = (form.get("category") or "").strip()
+    if not chosen:
+        return None
+    if chosen != _CUSTOM_CATEGORY:
+        if chosen not in known:
+            raise ValueError("Choose a category from the list.")
+        return chosen
+
+    # The second .strip() matters: truncating can leave a trailing space, which
+    # would make an otherwise-identical category miss its own tab.
+    name = (form.get("custom_category") or "").strip()[:_MAX_CATEGORY_LEN].strip()
+    if not name:
+        raise ValueError("Enter a name for the custom category.")
+    if name == _CUSTOM_CATEGORY:
+        raise ValueError("That category name is reserved — pick another.")
+    for option in known:
+        if option.casefold() == name.casefold():
+            return option
+    return name
+
+
+def _validated_expense(
+    form, member_ids: set[int], known_categories: list[str]
+) -> tuple[str, int, str, int, dict[int, int], str | None]:
     """Validate the expense form — add and edit submit identical fields.
-    Returns (description, total_cents, split_type, payer_id, shares), or raises
-    ValueError with a message ready to show the member. Everything this calls
+    Returns (description, total_cents, split_type, payer_id, shares, category),
+    or raises ValueError with a message ready to show the member. Everything this calls
     (parse_amount_cents, split_equal, validate_exact) already raises ValueError
     the same way, so the caller catches one exception type for the lot."""
     description = (form.get("description") or "").strip()
@@ -120,7 +170,9 @@ def _validated_expense(form, member_ids: set[int]) -> tuple[str, int, str, int, 
         shares = {pid: _parse_share_cents(form.get(f"share_{pid}", "")) for pid in participant_ids}
         validate_exact(total_cents, shares)
 
-    return description, total_cents, split_type, payer_id, shares
+    return description, total_cents, split_type, payer_id, shares, _chosen_category(
+        form, known_categories
+    )
 
 
 def _submitted_values(form, members: list) -> dict:
@@ -129,6 +181,8 @@ def _submitted_values(form, members: list) -> dict:
     return {
         "description": form.get("description", ""),
         "amount": form.get("amount", ""),
+        "category": form.get("category", ""),
+        "custom_category": form.get("custom_category", ""),
         "split_type": form.get("split_type", "equal"),
         "payer_id": form.get("payer_id", ""),
         "selected_ids": {int(v) for v in form.getlist("participant_ids") if v.isdigit()},
@@ -158,11 +212,14 @@ def new_expense_form(slug: str, request: Request, result=Depends(require_member)
         {
             "group": group,
             "members": members,
+            "category_options": used_categories(session, group.id),
             "action": f"/g/{slug}/expenses/new",
             "heading": "Add expense",
             "submit_label": "Save expense",
             "description": "",
             "amount": "",
+            "category": "",
+            "custom_category": "",
             "split_type": "equal",
             "payer_id": str(me.id),
             # Default everyone in — the common case at a group dinner.
@@ -178,11 +235,12 @@ async def create_expense(slug: str, request: Request, result=Depends(require_mem
         return result
     group, me = result
     members = get_members(session, group.id)
+    category_options = used_categories(session, group.id)
     form = await request.form()
 
     try:
-        description, total_cents, split_type, payer_id, shares = _validated_expense(
-            form, {m.id for m in members}
+        description, total_cents, split_type, payer_id, shares, category = _validated_expense(
+            form, {m.id for m in members}, category_options
         )
     except ValueError as exc:
         return templates.TemplateResponse(
@@ -194,6 +252,7 @@ async def create_expense(slug: str, request: Request, result=Depends(require_mem
                 "action": f"/g/{slug}/expenses/new",
                 "heading": "Add expense",
                 "submit_label": "Save expense",
+                "category_options": category_options,
                 "error": str(exc),
                 **_submitted_values(form, members),
             },
@@ -206,6 +265,7 @@ async def create_expense(slug: str, request: Request, result=Depends(require_mem
         amount_cents=total_cents,
         payer_id=payer_id,
         split_type=split_type,
+        category=category,
         created_by_id=me.id,  # me came from require_member, already scoped to this group
     )
     session.add(expense)
@@ -238,11 +298,14 @@ def edit_expense_form(slug: str, expense_id: int, request: Request, result=Depen
         {
             "group": group,
             "members": members,
+            "category_options": used_categories(session, group.id),
             "action": f"/g/{slug}/expenses/{expense.id}/edit",
             "heading": "Edit expense",
             "submit_label": "Save changes",
             "description": expense.description,
             "amount": format_cents(expense.amount_cents),
+            "category": expense.category or "",
+            "custom_category": "",
             "split_type": expense.split_type,
             # The template compares against `m.id|string`, so this has to be a
             # string here even though it's an int on the model.
@@ -263,11 +326,12 @@ async def update_expense(slug: str, expense_id: int, request: Request, result=De
         return RedirectResponse(url=f"/g/{slug}", status_code=303)
 
     members = get_members(session, group.id)
+    category_options = used_categories(session, group.id)
     form = await request.form()
 
     try:
-        description, total_cents, split_type, payer_id, shares = _validated_expense(
-            form, {m.id for m in members}
+        description, total_cents, split_type, payer_id, shares, category = _validated_expense(
+            form, {m.id for m in members}, category_options
         )
     except ValueError as exc:
         return templates.TemplateResponse(
@@ -279,6 +343,7 @@ async def update_expense(slug: str, expense_id: int, request: Request, result=De
                 "action": f"/g/{slug}/expenses/{expense.id}/edit",
                 "heading": "Edit expense",
                 "submit_label": "Save changes",
+                "category_options": category_options,
                 "error": str(exc),
                 **_submitted_values(form, members),
             },
@@ -289,6 +354,9 @@ async def update_expense(slug: str, expense_id: int, request: Request, result=De
     expense.amount_cents = total_cents
     expense.payer_id = payer_id
     expense.split_type = split_type
+    # Assigned unconditionally, so clearing the field clears the category
+    # rather than leaving the old one stuck on the expense.
+    expense.category = category
     # created_at and created_by_id stay put: the feed is ordered by created_at,
     # so editing an expense must not jump it to the top of the activity list.
     session.add(expense)
@@ -344,7 +412,7 @@ def export_csv(slug: str, request: Request, result=Depends(require_member), sess
 
     # Expenses section
     writer.writerow(["Expenses"])
-    writer.writerow(["Date", "Description", "Amount", "Payer", "Split Type", "Participants & Shares"])
+    writer.writerow(["Date", "Description", "Category", "Amount", "Payer", "Split Type", "Participants & Shares"])
     for row in expenses_for_group(session, group.id):
         expense = row["expense"]
         if expense.deleted_at is not None:
@@ -356,6 +424,7 @@ def export_csv(slug: str, request: Request, result=Depends(require_member), sess
         writer.writerow([
             expense.created_at.date().isoformat(),
             expense.description,
+            expense.category or "",
             format_cents(expense.amount_cents),
             row["payer_name"],
             expense.split_type,

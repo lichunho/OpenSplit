@@ -62,11 +62,11 @@ All money is `int` cents. There is no `Float` or `Numeric` column anywhere.
 |---|---|
 | `Group` | `id`, `slug` (unique, `secrets.token_urlsafe(8)`), `name`, `currency_symbol`, `created_at` |
 | `Member` | `id`, `group_id`, `name`, `password_hash` (nullable), `created_at`; unique `(group_id, name)` |
-| `Expense` | `id`, `group_id`, `description`, `amount_cents`, `payer_id`, `split_type`, `created_by_id`, `note`, `created_at`, `deleted_at` |
+| `Expense` | `id`, `group_id`, `description`, `amount_cents`, `payer_id`, `split_type`, `created_by_id`, `note`, `category` (nullable), `created_at`, `deleted_at` |
 | `Share` | `id`, `expense_id`, `member_id`, `amount_cents` |
 | `Settlement` | `id`, `group_id`, `from_member_id`, `to_member_id`, `amount_cents`, `created_by_id`, `note`, `created_at`, `deleted_at` |
 
-Three decisions worth knowing:
+Four decisions worth knowing:
 
 **Shares are materialised, not recomputed.** A `Share` row per participant is written when
 the expense is created. Recomputing on read would mean a member who joins mid-trip silently
@@ -75,6 +75,34 @@ appears in the history of expenses they weren't part of.
 **`Settlement` is its own table, not an expense variant.** Two parties, no shares. Folding
 it into `Expense` would mean nullable columns and `if split_type == "settlement"` branches
 everywhere. The activity feed merges the two lists by `created_at` at render time.
+
+**Categories are free text, not a table.** `Expense.category` is a nullable string. There
+is no `Category` table, no per-group seeding and no management UI: a category exists the
+moment someone names one on the expense form, and stops existing when the last expense using
+it stops using it. There is **no built-in starter list** either — `queries.used_categories`
+is the whole of it, so a group's categories are exactly the ones that group has used, and a
+new group starts with none. `NULL` means uncategorized, which is what every expense predating
+the column reads back as.
+
+**The picker is a `<select>` plus a "Custom…" escape hatch.** The dropdown lists
+`No category`, the group's existing categories, then `Custom…` (value `__custom__`), which
+reveals a text field for a name not on the list. A category's *first* use therefore always
+goes through Custom…; after that it is an ordinary option. Because the list is per-group, a
+custom name is available to that group and no other — "this trip only" falls out of
+`used_categories` rather than needing storage of its own.
+
+> `routes/expenses._chosen_category` reads both fields. The select is validated against the
+> known options — a `<select>` constrains the browser, not a hand-written POST, so this is
+> the same check `payer_id` already gets against the roster. A custom name is folded against
+> the known options case-insensitively, so "food" typed today joins yesterday's "Food" rather
+> than opening a second tab beside it; unmatched names are kept exactly as typed, over-long
+> ones truncated to 40 characters. The sentinel itself is rejected as a name, or its
+> `<option value="__custom__">` would read back as "Custom…" on the next render.
+
+> **JS-off:** the custom field is rendered visible and hidden by a `category-known` class
+> that only `app.js` adds — the same arrangement as `.share-input` for exact splits. With
+> scripting off, the dropdown and the text box are both on screen and picking `Custom…`
+> still works. There is no second server path for the two cases.
 
 **Soft delete.** `Expense` and `Settlement` carry `deleted_at`. Every balance query filters
 `deleted_at IS NULL`; the feed still shows deleted rows struck through, with undo.
@@ -132,7 +160,7 @@ it to `Decimal`.
 |---|---|---|
 | GET | `/` | Landing + create-group form |
 | POST | `/groups` | Create group, redirect to `/g/{slug}` |
-| GET | `/g/{slug}` | Dashboard: balances, simplified debts, activity feed |
+| GET | `/g/{slug}` | Dashboard: balances, simplified debts, activity feed; `?category=` filters the feed |
 | GET/POST | `/g/{slug}/identify` | when2meet sign-in |
 | POST | `/g/{slug}/switch` | Forget identity for this group ("not you?") |
 | POST | `/g/{slug}/members` | Add a member by name |
@@ -148,6 +176,21 @@ it to `Decimal`.
 | GET | `/robots.txt` | Disallow all |
 
 **All POSTs redirect 303** so a refresh doesn't double-submit.
+
+**The dashboard's `category` query param has three states**, and needs no sentinel value for
+the third — a category can never be the empty string, because `_chosen_category` maps
+blank input to `None`:
+
+| URL | Shows |
+|---|---|
+| `/g/{slug}` | everything |
+| `/g/{slug}?category=Food` | that category only |
+| `/g/{slug}?category=` | uncategorized expenses only |
+
+The filter narrows **the activity feed and nothing else**. Balances and suggested settlements
+are always computed from the unfiltered `queries.balance_inputs`, because what someone owes
+must not depend on which tab is open. Settlements carry no category, so they appear under
+"All" and under no other tab.
 
 `require_member(slug)` is the dependency guarding every group route. It returns
 `(group, member)` or a redirect to the identify page — so every route calls

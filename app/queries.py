@@ -73,3 +73,20 @@ def expenses_for_group(session: Session, group_id: int) -> list[dict]:
             }
         )
     return rows
+
+
+def used_categories(session: Session, group_id: int) -> list[str]:
+    """This group's distinct categories, sorted — the dashboard's filter tabs,
+    and the whole of the expense form's category dropdown. There is no built-in
+    starter list: a group's categories are exactly the ones it has used.
+
+    Soft-deleted expenses count here. The feed still shows them (struck
+    through, with a restore control), so dropping them would make a tab
+    vanish while one of its rows is still on screen.
+    """
+    categories = session.exec(
+        select(Expense.category)
+        .where(Expense.group_id == group_id, Expense.category.is_not(None))
+        .distinct()
+    ).all()
+    return sorted(categories)

@@ -444,6 +444,13 @@ label.checkbox input {
   display: none;
 }
 
+/* Same arrangement as .share-input above: the custom-category field is
+   rendered visible so it stays reachable with JS disabled, and JS hides it
+   once it knows a listed category is picked. */
+#expense-form.category-known .custom-category-field {
+  display: none;
+}
+
 /* Keeps a form's primary action reachable without scrolling on a long form
    (the expense form especially) — it stays pinned to the bottom of the
    viewport as the rest of the form scrolls underneath. */
@@ -739,6 +746,52 @@ label.checkbox input {
 /* ---------------------------------------------------------------------------
    Activity feed
    --------------------------------------------------------------------------- */
+
+/* Category filter tabs. Same pill shape as .member-list li, so the two
+   rows of chips on this page read as one family. */
+.filter-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.filter-tab {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 0.25rem 0.7rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.filter-tab.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.category-chip {
+  display: inline-block;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 0 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.filter-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.9rem 0 0;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+}
 
 .expense-list {
   list-style: none;

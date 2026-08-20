@@ -115,7 +115,7 @@ These fail *only* on the deployed free tier — a green local `pytest` proves no
 
 ## Scope
 
-In: equal and exact splits, balances, simplified debts, recorded settlements, expense editing, CSV export, soft delete.
+In: equal and exact splits, balances, simplified debts, recorded settlements, expense editing, free-text expense categories with a per-category feed filter, CSV export, soft delete.
 
 Deliberately out: real payment rails, multi-currency, member rename/delete, percentage or share splits, multi-payer expenses, notifications. Free-tier cold start is accepted, not engineered around.
 

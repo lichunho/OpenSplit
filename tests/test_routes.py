@@ -703,6 +703,8 @@ def _add_expense(
     participant_ids: list[int],
     split_type: str = "equal",
     shares: dict[int, str] | None = None,
+    category: str | None = None,
+    custom_category: str | None = None,
 ) -> None:
     data = {
         "description": description,
@@ -711,6 +713,10 @@ def _add_expense(
         "split_type": split_type,
         "participant_ids": [str(pid) for pid in participant_ids],
     }
+    if category is not None:
+        data["category"] = category
+    if custom_category is not None:
+        data["custom_category"] = custom_category
     for member_id, share_amount in (shares or {}).items():
         data[f"share_{member_id}"] = share_amount
     response = client.post(f"/g/{slug}/expenses/new", data=data, follow_redirects=False)
@@ -1303,3 +1309,341 @@ def test_group_page_copy_button_and_loading_indicator_are_hidden_without_js(clie
     assert '<button type="button" id="copy-link-btn" hidden>' in page.text
     assert 'id="loading-indicator"' in page.text and "hidden>" in page.text
     assert 'id="link" readonly' in page.text and 'onclick="this.select()"' in page.text
+
+
+# ---------------------------------------------------------------------------
+# Categories and the activity-feed filter
+# ---------------------------------------------------------------------------
+
+
+def _first_use(name: str) -> dict:
+    """Form fields that create a category. There are no built-in categories,
+    so a name the group hasn't used yet can only arrive through Custom…;
+    afterwards it's a listed option and `category=name` picks it."""
+    return {"category": "__custom__", "custom_category": name}
+
+
+def _expense_by_description(slug: str, description: str) -> Expense:
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        return session.exec(
+            select(Expense).where(
+                Expense.group_id == group.id, Expense.description == description
+            )
+        ).first()
+
+
+def test_expense_stores_a_default_category_and_shows_it_as_a_chip(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id], **_first_use("Food"))
+
+    assert _expense_by_description(slug, "Dinner").category == "Food"
+    page = client.get(f"/g/{slug}")
+    assert '<span class="category-chip">Food</span>' in page.text
+
+
+def test_custom_category_is_stored_exactly_as_typed(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(
+        client, slug, "Lift", "30.00", chris_id, [chris_id, alex_id],
+        category="__custom__", custom_category="Ski passes",
+    )
+
+    assert _expense_by_description(slug, "Lift").category == "Ski passes"
+    assert "Ski passes" in client.get(f"/g/{slug}").text
+
+
+def test_blank_category_is_stored_as_none_and_gets_an_uncategorized_tab(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id], category="")
+
+    assert _expense_by_description(slug, "Dinner").category is None
+    page = client.get(f"/g/{slug}")
+    assert "Uncategorized" in page.text
+    assert "category-chip" not in page.text
+
+
+def test_category_casing_folds_onto_the_existing_spelling(client: TestClient):
+    # "food" typed today must join yesterday's "Food" tab, not open a second
+    # one beside it.
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id], **_first_use("Food"))
+    _add_expense(
+        client, slug, "Lunch", "12.00", chris_id, [chris_id, alex_id],
+        category="__custom__", custom_category="  fOOd ",
+    )
+
+    assert _expense_by_description(slug, "Lunch").category == "Food"
+    page = client.get(f"/g/{slug}")
+    assert page.text.count(f'href="/g/{slug}?category=Food"') == 1
+
+
+def test_filter_narrows_the_feed_to_one_category(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id], **_first_use("Food"))
+    _add_expense(client, slug, "Petrol", "40.00", chris_id, [chris_id, alex_id], **_first_use("Gas"))
+
+    page = client.get(f"/g/{slug}?category=Food")
+    assert page.status_code == 200
+    assert "Dinner" in page.text
+    assert "Petrol" not in page.text
+
+
+def test_empty_category_param_shows_only_uncategorized_expenses(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id], **_first_use("Food"))
+    _add_expense(client, slug, "Mystery", "9.00", chris_id, [chris_id, alex_id])
+
+    page = client.get(f"/g/{slug}?category=")
+    assert page.status_code == 200
+    assert "Mystery" in page.text
+    assert "Dinner" not in page.text
+
+
+def test_filtering_never_changes_the_balances(client: TestClient):
+    """The whole point of filtering the feed only: what someone owes must not
+    depend on which tab happens to be open."""
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "100.00", chris_id, [chris_id, alex_id, sam_id], **_first_use("Food"))
+    _add_expense(client, slug, "Petrol", "45.00", alex_id, [chris_id, alex_id, sam_id], **_first_use("Gas"))
+
+    def balances_block(text: str) -> str:
+        return text.split("<h2>Balances</h2>")[1].split("</section>")[0]
+
+    unfiltered = balances_block(client.get(f"/g/{slug}").text)
+    for query in ("?category=Food", "?category=Gas", "?category="):
+        assert balances_block(client.get(f"/g/{slug}{query}").text) == unfiltered
+
+
+def test_settlements_appear_under_all_but_never_under_a_category(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id, sam_id], **_first_use("Food"))
+    alex = _identify_as(client, slug, alex_id)
+    settle = alex.post(
+        f"/g/{slug}/settle",
+        data={"to_member_id": str(chris_id), "from_member_id": str(alex_id), "amount": "5.00"},
+        follow_redirects=False,
+    )
+    assert settle.status_code == 303
+
+    # Match the feed row itself, not the bare word "settlement" — the
+    # "Suggested settlements" card in the sidebar renders on every view.
+    row = "Alex paid Chris"
+    assert row in client.get(f"/g/{slug}").text
+    assert row not in client.get(f"/g/{slug}?category=Food").text
+    assert row not in client.get(f"/g/{slug}?category=").text
+
+
+def test_editing_can_change_and_then_clear_a_category(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id], **_first_use("Food"))
+    expense_id = _only_expense_id(slug)
+
+    edit_data = {
+        "description": "Dinner",
+        "amount": "30.00",
+        "payer_id": str(chris_id),
+        "split_type": "equal",
+        "participant_ids": [str(chris_id), str(alex_id)],
+    }
+    client.post(
+        f"/g/{slug}/expenses/{expense_id}/edit",
+        data={**edit_data, **_first_use("Hotels")},
+        follow_redirects=False,
+    )
+    assert _expense_by_description(slug, "Dinner").category == "Hotels"
+
+    # Clearing the field must clear the category, not leave the old one stuck.
+    client.post(
+        f"/g/{slug}/expenses/{expense_id}/edit",
+        data={**edit_data, "category": ""},
+        follow_redirects=False,
+    )
+    assert _expense_by_description(slug, "Dinner").category is None
+
+
+def test_edit_form_prefills_the_stored_category(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id], **_first_use("Hotels"))
+
+    page = client.get(f"/g/{slug}/expenses/{_only_expense_id(slug)}/edit")
+    assert 'id="category"' in page.text
+    assert 'value="Hotels"' in page.text
+
+
+def test_unknown_category_filter_renders_an_empty_state_not_a_500(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id], **_first_use("Food"))
+
+    page = client.get(f"/g/{slug}?category=DoesNotExist")
+    assert page.status_code == 200
+    assert "Nothing in DoesNotExist yet." in page.text
+
+
+def test_over_long_category_is_truncated_not_rejected(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    # _add_expense asserts the 303, so reaching the line below is itself the
+    # "not rejected" half of this test.
+    _add_expense(
+        client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id],
+        category="__custom__", custom_category="x" * 45,
+    )
+
+    assert _expense_by_description(slug, "Dinner").category == "x" * 40
+
+
+def test_csv_export_includes_the_category_column(client: TestClient):
+    import csv
+
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id], **_first_use("Food"))
+    _add_expense(client, slug, "Mystery", "9.00", chris_id, [chris_id, alex_id])
+
+    rows = list(csv.reader(client.get(f"/g/{slug}/export.csv").text.splitlines()))
+    assert rows[1][2] == "Category"
+    by_description = {row[1]: row for row in rows[2:] if len(row) > 2}
+    assert by_description["Dinner"][2] == "Food"
+    assert by_description["Mystery"][2] == ""
+
+
+def _category_option_values(page_text: str) -> list[str]:
+    """The category <select>'s option values, in render order. Trimmed at the
+    Custom… option because the payer select follows it in the markup."""
+    options = re.findall(r'<option value="([^"]*)"[^>]*>([^<]*)</option>', page_text)
+    trimmed = options[: options.index(("__custom__", "Custom&hellip;")) + 1]
+    return [value for value, _label in trimmed]
+
+
+def test_category_dropdown_starts_empty_and_grows_from_the_groups_own_use(client: TestClient):
+    """No built-in starter list: a brand-new group offers only "No category"
+    and Custom…, and every option after that is one the group created."""
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+
+    page = client.get(f"/g/{slug}/expenses/new")
+    assert '<select id="category" name="category">' in page.text
+    assert '<option value="">No category</option>' in page.text
+    assert _category_option_values(page.text) == ["", "__custom__"]
+
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id], **_first_use("Food"))
+    grown = client.get(f"/g/{slug}/expenses/new")
+    assert _category_option_values(grown.text) == ["", "Food", "__custom__"]
+
+
+def test_a_custom_category_joins_the_dropdown_for_that_group_only(client: TestClient):
+    """The "for this trip only" guarantee: _category_options reads used
+    categories from this group's expenses, so nothing leaks between groups."""
+    slug = _create_group(client, "Ski trip")
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(
+        client, slug, "Lift", "30.00", chris_id, [chris_id, alex_id],
+        category="__custom__", custom_category="Ski passes",
+    )
+
+    assert '<option value="Ski passes"' in client.get(f"/g/{slug}/expenses/new").text
+
+    other_slug = _create_group(client, "Beach trip")
+    _create_trio(client, other_slug)
+    # Match the <option>, not the bare name — the custom field's placeholder
+    # text happens to use "Ski passes" as its example.
+    assert '<option value="Ski passes"' not in client.get(f"/g/{other_slug}/expenses/new").text
+
+
+def test_custom_selected_with_a_blank_name_is_rejected_without_500(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+
+    response = client.post(
+        f"/g/{slug}/expenses/new",
+        data={
+            "description": "Dinner",
+            "amount": "30.00",
+            "payer_id": str(chris_id),
+            "split_type": "equal",
+            "participant_ids": [str(chris_id), str(alex_id)],
+            "category": "__custom__",
+            "custom_category": "   ",
+        },
+    )
+    assert response.status_code == 400
+    assert "Enter a name for the custom category." in response.text
+    # The rest of the form comes back filled in, and nothing was written.
+    assert 'value="Dinner"' in response.text
+    assert _expense_by_description(slug, "Dinner") is None
+
+
+def test_category_not_on_the_list_is_rejected(client: TestClient):
+    # A <select> constrains the browser, not a hand-written POST.
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+
+    response = client.post(
+        f"/g/{slug}/expenses/new",
+        data={
+            "description": "Dinner",
+            "amount": "30.00",
+            "payer_id": str(chris_id),
+            "split_type": "equal",
+            "participant_ids": [str(chris_id), str(alex_id)],
+            "category": "NeverSeenBefore",
+        },
+    )
+    assert response.status_code == 400
+    assert "Choose a category from the list." in response.text
+    assert _expense_by_description(slug, "Dinner") is None
+
+
+def test_the_custom_sentinel_cannot_be_stored_as_a_category_name(client: TestClient):
+    # Otherwise its <option value="__custom__"> would read back as "Custom…".
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+
+    response = client.post(
+        f"/g/{slug}/expenses/new",
+        data={
+            "description": "Dinner",
+            "amount": "30.00",
+            "payer_id": str(chris_id),
+            "split_type": "equal",
+            "participant_ids": [str(chris_id), str(alex_id)],
+            "category": "__custom__",
+            "custom_category": "__custom__",
+        },
+    )
+    assert response.status_code == 400
+    assert "reserved" in response.text
+    assert _expense_by_description(slug, "Dinner") is None
+
+
+def test_edit_form_preselects_the_stored_category_option(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id], **_first_use("Hotels"))
+
+    page = client.get(f"/g/{slug}/expenses/{_only_expense_id(slug)}/edit")
+    assert '<option value="Hotels" selected>Hotels</option>' in page.text
+
+
+def test_custom_category_field_is_reachable_without_js(client: TestClient):
+    # Mirrors .share-input: the field is rendered visible and only JS ever
+    # hides it, so with scripting off the dropdown and the box are both usable.
+    slug = _create_group(client)
+    _create_trio(client, slug)
+
+    page = client.get(f"/g/{slug}/expenses/new")
+    assert 'id="custom_category"' in page.text
+    assert "hidden" not in page.text.split('id="custom_category"')[1].split(">")[0]
+    assert "category-known" not in page.text

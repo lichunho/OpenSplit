@@ -19,6 +19,22 @@
           <label for="amount">Amount ({{ group.currency_symbol }})</label>
           <input type="text" inputmode="decimal" id="amount" name="amount" value="{{ amount }}" required>
 
+          <label for="category">Category</label>
+          <select id="category" name="category">
+            <option value="">No category</option>
+            {% for c in category_options %}
+              <option value="{{ c }}" {% if category == c %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+            <option value="__custom__" {% if category == '__custom__' %}selected{% endif %}>Custom&hellip;</option>
+          </select>
+
+          {# Rendered visible, hidden by a class only app.js ever adds — same
+             arrangement as .share-input, so with JS off the dropdown and this
+             box are both on screen and picking "Custom…" still works. #}
+          <label for="custom_category" class="custom-category-field">New category name</label>
+          <input type="text" id="custom_category" name="custom_category" class="custom-category-field"
+                 maxlength="40" value="{{ custom_category }}" placeholder="e.g. Ski passes">
+
           <label for="payer_id">Who paid?</label>
           <select id="payer_id" name="payer_id" required>
             {% for m in members %}
