@@ -49,7 +49,7 @@ Full design rationale lives in the implementation plan at `~/.claude/plans/the-g
 
 ## Current state
 
-**All nine milestones of the implementation plan are built and committed** on the `build/v1` branch, with 84 tests passing. Not yet done: the plan's *deployed* verification — pushing to GitHub, wiring Render + Neon, and the 20-minute-idle test that is the only real proof trap #1 is fixed. `docker compose up` is also written but has never been executed (no Docker daemon was running).
+**All nine milestones of the implementation plan are built and committed** on the `build/v1` branch, with 133 tests passing. Not yet done: the plan's *deployed* verification — pushing to GitHub, wiring Render + Neon, and the 20-minute-idle test that is the only real proof trap #1 is fixed. `docker compose up` is also written but has never been executed (no Docker daemon was running).
 
 ## Stack
 
@@ -85,20 +85,22 @@ app/
   config.py     env + paths (see the Code Quality note above)
   db.py         engine, session dependency, URL normalisation, pool config
   models.py     SQLModel tables
-  money.py      PURE functions: split, balances, simplify  <- the testable core
+  money.py      PURE functions: parse, split, balances, simplify  <- the testable core
   auth.py       session helpers, scrypt hash/verify, require_member
   queries.py    read-side queries/formatting shared by more than one route
-  routes/       groups.py, expenses.py, settlements.py
-  templates/    base, index, identify, group, expense_form, settle_pick, settle_confirm
+  csv_import.py PURE: exported CSV text -> an ImportPlan (no DB, like money.py)
+  routes/       groups.py, expenses.py, settlements.py, imports.py
+  templates/    base, index, identify, group, expense_form, settle_pick, settle_confirm,
+                import_form, import_preview
   static/       app.css, app.js, robots.txt
-tests/          test_money.py, test_routes.py
+tests/          test_money.py, test_routes.py, test_csv_import.py
 ```
 
 Invariants that span files:
 
 - **All money is integer cents.** Never floats, anywhere. Parse decimal input with `Decimal` + `ROUND_HALF_UP`, never `float()`, with a sanity ceiling.
 - **`money.py` is DB-free by design** so it can be tested directly. Every real bug in this app lives in its three functions.
-- **Shares are stored, not recomputed.** A member joining mid-trip must not silently rewrite the history of expenses they weren't part of.
+- **Shares are stored, not recomputed.** A member joining mid-trip must not silently rewrite the history of expenses they weren't part of. CSV import obeys this too: an `equal` row keeps the cents from the file rather than being re-split, so a round trip can't move the rounding cent to a different member.
 - **`Settlement` is its own table**, not an expense variant — two parties, no shares. The activity feed merges expenses and settlements by `created_at` at render time.
 - **Soft delete**: expenses and settlements carry `deleted_at`; every balance query filters `deleted_at IS NULL`.
 - **`require_member(slug)`** returns `(group, member)` or redirects to identify. Every mutating route depends on it.
@@ -115,7 +117,7 @@ These fail *only* on the deployed free tier — a green local `pytest` proves no
 
 ## Scope
 
-In: equal and exact splits, balances, simplified debts, recorded settlements, expense editing, free-text expense categories with a per-category feed filter, CSV export, soft delete.
+In: equal and exact splits, balances, simplified debts, recorded settlements, expense editing, free-text expense categories with a per-category feed filter, CSV export and import, soft delete.
 
 Deliberately out: real payment rails, multi-currency, member rename/delete, percentage or share splits, multi-payer expenses, notifications. Free-tier cold start is accepted, not engineered around.
 

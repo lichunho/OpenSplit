@@ -31,13 +31,15 @@ app/
   config.py      every os.environ read in the codebase lives here
   db.py          engine + session dependency, URL normalisation, pool config
   models.py      SQLModel tables
-  money.py       PURE functions: split_equal, validate_exact, net_balances, simplify
+  money.py       PURE functions: parse_amount_cents, split_equal, validate_exact, net_balances, simplify
   auth.py        session helpers, scrypt hash/verify, require_member
   queries.py     read-side queries + cents formatting shared by more than one route
-  routes/        groups.py, expenses.py, settlements.py
-  templates/     base, index, identify, group, expense_form, settle_pick, settle_confirm
+  csv_import.py  PURE: exported CSV text -> an ImportPlan of rows to create
+  routes/        groups.py, expenses.py, settlements.py, imports.py
+  templates/     base, index, identify, group, expense_form, settle_pick, settle_confirm,
+                 import_form, import_preview
   static/        app.css, app.js, robots.txt
-tests/           test_money.py (28), test_routes.py (50), test_db.py (6)
+tests/           test_money.py (28), test_routes.py (82), test_csv_import.py (17), test_db.py (6)
 ```
 
 Rules that span files:
@@ -46,8 +48,15 @@ Rules that span files:
   `auth.py` imports `SECRET_KEY`. Neither touches the environment directly. This keeps
   configuration auditable in one place instead of scattered across modules.
 - **`money.py` imports nothing from the app.** No DB, no models, no config — stdlib only
-  (it uses `heapq`). It takes and returns plain ints, dicts and tuples. This is what makes
-  it testable without a web server or a database.
+  (`heapq`, `re`, `decimal`). It takes and returns plain ints, dicts and tuples. This is what
+  makes it testable without a web server or a database. The decimal-string parsers live here
+  rather than beside the expense form that first needed them: three callers now share them —
+  the expense form, the settle form and the importer — and a DB-free importer must not have
+  to import a route module to reach one.
+- **`csv_import.py` imports nothing from the app but `money.py`.** Same reason, same payoff:
+  text in, dataclasses out, so `test_csv_import.py` exercises every parse rule with no
+  `TestClient` and no `Session`. Resolving names to member ids and writing rows is
+  `routes/imports.py`'s job, and the split is what keeps the parser honest.
 - **`main.py` is a thin entry point.** Wiring only.
 - **`queries.py` exists because three route modules needed the same reads.** Before it,
   `balance_inputs` and cents-formatting had been copy-pasted across modules and had already
@@ -172,10 +181,37 @@ it to `Decimal`.
 | POST | `/g/{slug}/settle` | Record it |
 | POST | `/g/{slug}/settlements/{id}/delete` · `/restore` | Undo a mistaken settlement |
 | GET | `/g/{slug}/export.csv` | Expenses + settlements + balances |
+| GET | `/g/{slug}/import` | Upload form |
+| POST | `/g/{slug}/import/preview` | Parse and show what will be created — writes nothing |
+| POST | `/g/{slug}/import/confirm` | Re-parse and write |
 | GET | `/healthz` | Uptime check |
 | GET | `/robots.txt` | Disallow all |
 
 **All POSTs redirect 303** so a refresh doesn't double-submit.
+
+**CSV import re-reads the export**, which makes the export a contract rather than a
+one-way door. Four things about it are load-bearing:
+
+- **Columns are matched by name, never by position.** Each section's header row becomes a
+  `{casefolded name: index}` map. The columns the parser needs are looked up in it, missing
+  required ones are named in one error, and every other column in the file is ignored. This
+  is what lets the export keep growing — Category was added after the first release — without
+  stranding files exported by an older version.
+- **Every bad row is reported, not just the first.** A row that fails validation is skipped
+  with a `Row N:` message and parsing continues, so one typo in row 3 doesn't hide the twelve
+  good rows behind it. `N` is the physical line number, which is what a spreadsheet shows.
+- **The file crosses the two steps in a hidden field**, and `import/confirm` re-parses it
+  from scratch. There is no staging table (that would be a schema change — see the
+  `create_all` trap) and no session storage (a signed cookie can't hold a group's history).
+  The hidden field is a transport, not a source of truth.
+- **Timestamps are reconstructed.** The export writes date only, so rows are written
+  oldest-first and each row on a given date gets its own timestamp one second apart.
+  Without that, every row on a day would share one midnight and the feed's `created_at desc`
+  sort would order them arbitrarily instead of reproducing the file.
+
+Shares come back from the file verbatim — an `equal` row is **not** re-split on import. Re-running
+`split_equal` would be free to hand the rounding cent to a different member than the original
+expense did, quietly changing two people's balances on a round trip.
 
 **The dashboard's `category` query param has three states**, and needs no sentinel value for
 the third — a category can never be the empty string, because `_chosen_category` maps
@@ -285,7 +321,8 @@ moment there is data worth preserving.**
 
 ## Testing
 
-84 tests: **28** on the money core, **50** on routes, **6** on engine configuration.
+133 tests: **28** on the money core, **82** on routes, **17** on the CSV parser, **6** on
+engine configuration.
 
 The split is deliberate. `test_money.py` hits the pure functions directly — that's where
 the real bugs are, and those tests need no database, no HTTP, and no fixtures.

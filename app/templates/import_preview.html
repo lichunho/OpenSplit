@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Confirm import{% endblock %}
+{% block wrap_class %}wrap--wide{% endblock %}
+{% block content %}
+  {# Same integer-cents formatter as group.html — imported amounts are always
+     positive, so this never sees the negative case balances need. #}
+  {% macro dollars(cents) -%}
+    {{ group.currency_symbol }}{{ "%d.%02d"|format(cents // 100, cents % 100) }}
+  {%- endmacro %}
+
+  <a class="back-link" href="/g/{{ group.slug }}/import">&larr; Choose a different file</a>
+  <h1>Confirm import</h1>
+
+  <div class="card">
+    <p>
+      This will add <strong>{{ plan.expenses|length }}</strong>
+      expense{{ '' if plan.expenses|length == 1 else 's' }}
+      and <strong>{{ plan.settlements|length }}</strong>
+      settlement{{ '' if plan.settlements|length == 1 else 's' }} to {{ group.name }}.
+      Nothing already in the group is changed.
+    </p>
+
+    {% if new_members %}
+      <p class="flash">
+        New members will be added: {{ new_members|join(', ') }}.
+      </p>
+    {% endif %}
+
+    <form method="post" action="/g/{{ group.slug }}/import/confirm">
+      <!-- The file itself, carried across the two steps. The confirm route
+           re-parses and re-validates it from scratch rather than trusting it. -->
+      <textarea name="csv_text" hidden>{{ csv_text }}</textarea>
+      <div class="submit-bar">
+        <button type="submit">Import {{ plan.expenses|length + plan.settlements|length }} rows</button>
+      </div>
+    </form>
+  </div>
+
+  {% if plan.expenses %}
+    <section class="card">
+      <h2>Expenses</h2>
+      <div class="table-scroll">
+        <table class="import-table">
+          <thead>
+            <tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th><th>Payer</th><th>Split</th></tr>
+          </thead>
+          <tbody>
+            {% for e in plan.expenses %}
+              <tr>
+                <td>{{ e.date }}</td>
+                <td>{{ e.description }}</td>
+                <td>{{ e.category or '—' }}</td>
+                <td>{{ dollars(e.amount_cents) }}</td>
+                <td>{{ e.payer }}</td>
+                <td>{{ e.split_type }}, {{ e.shares|length }} people</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+
+  {% if plan.settlements %}
+    <section class="card">
+      <h2>Settlements</h2>
+      <div class="table-scroll">
+        <table class="import-table">
+          <thead>
+            <tr><th>Date</th><th>From</th><th>To</th><th>Amount</th><th>Note</th></tr>
+          </thead>
+          <tbody>
+            {% for s in plan.settlements %}
+              <tr>
+                <td>{{ s.date }}</td>
+                <td>{{ s.from_name }}</td>
+                <td>{{ s.to_name }}</td>
+                <td>{{ dollars(s.amount_cents) }}</td>
+                <td>{{ s.note or '—' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

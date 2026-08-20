@@ -2,7 +2,7 @@
 The three-screen settle-up flow (who are you paying -> confirm amount ->
 record it) plus soft-delete/restore undo. Settlement is its own table (see
 models.py) — two parties, no shares — so this module stays independent of
-expenses.py's split logic and only borrows its amount parser.
+expenses.py's split logic and only borrows money.py's amount parser.
 """
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -15,15 +15,13 @@ from sqlmodel import Session
 from app.auth import is_redirect, require_member
 from app.config import TEMPLATES_DIR
 from app.db import get_session
-from app.money import net_balances, simplify
-from app.models import Member, Settlement
-from app.queries import balance_inputs, format_cents, get_members
-
 # Both are reused rather than re-implemented: parse_amount_cents owns the
 # strict digits-only gate that rejects "1e5"/"NaN"/"Infinity", and
 # balance_inputs owns the Share->Expense join that respects soft delete.
 # Duplicating either is how the two would silently drift apart.
-from app.routes.expenses import parse_amount_cents
+from app.money import net_balances, parse_amount_cents, simplify
+from app.models import Member, Settlement
+from app.queries import balance_inputs, format_cents, get_members
 
 router = APIRouter()
 templates = Jinja2Templates(directory=TEMPLATES_DIR)

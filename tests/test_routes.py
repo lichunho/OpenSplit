@@ -1647,3 +1647,243 @@ def test_custom_category_field_is_reachable_without_js(client: TestClient):
     assert 'id="custom_category"' in page.text
     assert "hidden" not in page.text.split('id="custom_category"')[1].split(">")[0]
     assert "category-known" not in page.text
+
+
+# ---------------------------------------------------------------------------
+# CSV import. The export is the import's contract, so the tests that matter
+# most run a real export through a real import and compare balances.
+# ---------------------------------------------------------------------------
+
+
+def _import_csv(client: TestClient, slug: str, text: str):
+    """Both halves of the two-step flow. Returns the preview response when it
+    fails, so a caller can assert on it; otherwise the confirm redirect."""
+    preview = client.post(
+        f"/g/{slug}/import/preview",
+        files={"file": ("export.csv", text.encode("utf-8"), "text/csv")},
+        follow_redirects=False,
+    )
+    if preview.status_code != 200:
+        return preview
+    return client.post(
+        f"/g/{slug}/import/confirm", data={"csv_text": text}, follow_redirects=False
+    )
+
+
+def _members_by_name(slug: str) -> dict[str, int]:
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        return {m.name: m.id for m in session.exec(select(Member).where(Member.group_id == group.id))}
+
+
+def _balances_by_name(slug: str) -> dict[str, int]:
+    ids_to_names = {member_id: name for name, member_id in _members_by_name(slug).items()}
+    balances = _balances(slug)
+    # net_balances only returns members who appear in an expense or settlement;
+    # everyone else is a real zero, and the two groups must agree on those too.
+    return {name: balances.get(member_id, 0) for member_id, name in ids_to_names.items()}
+
+
+def test_export_then_import_into_a_fresh_group_reproduces_every_balance(client: TestClient):
+    source_slug = _create_group(client, "Source")
+    chris_id, _alex_id, sam_id = _setup_dinner_and_taxi(client, source_slug)
+    sam_browser = _identify_as(client, source_slug, sam_id)
+    sam_browser.post(
+        f"/g/{source_slug}/settle",
+        data={"to_member_id": str(chris_id), "from_member_id": str(sam_id), "amount": "13.33", "note": "venmo"},
+        follow_redirects=False,
+    )
+    exported = client.get(f"/g/{source_slug}/export.csv").text
+
+    target_slug = _create_group(client, "Target")
+    client.post(f"/g/{target_slug}/identify", data={"new_name": "Importer"}, follow_redirects=False)
+    response = _import_csv(client, target_slug, exported)
+    assert response.status_code == 303
+
+    source_balances = _balances_by_name(source_slug)
+    target_balances = _balances_by_name(target_slug)
+    # The importer identified themselves before uploading and is in no row of
+    # the file, so they are a real zero rather than a missing member.
+    assert target_balances.pop("Importer") == 0
+    assert target_balances == source_balances
+    assert sorted(source_balances) == ["Alex", "Chris", "Sam"]
+
+
+def test_import_creates_the_members_named_in_the_file(client: TestClient):
+    source_slug = _create_group(client, "Source")
+    _setup_dinner_and_taxi(client, source_slug)
+    exported = client.get(f"/g/{source_slug}/export.csv").text
+
+    target_slug = _create_group(client, "Target")
+    client.post(f"/g/{target_slug}/identify", data={"new_name": "Chris"}, follow_redirects=False)
+    assert _import_csv(client, target_slug, exported).status_code == 303
+
+    # Chris already existed and is matched, not duplicated; Alex and Sam are new.
+    assert sorted(_members_by_name(target_slug)) == ["Alex", "Chris", "Sam"]
+
+
+def test_import_preserves_the_dates_and_order_from_the_file(client: TestClient):
+    slug = _create_group(client)
+    client.post(f"/g/{slug}/identify", data={"new_name": "Importer"}, follow_redirects=False)
+    _import_csv(
+        client,
+        slug,
+        "Expenses\n"
+        "Date,Description,Amount,Payer,Split Type,Participants & Shares\n"
+        "2026-08-14,Newest,10.00,Chris,equal,Chris: 10.00\n"
+        "2026-08-14,Middle,10.00,Chris,equal,Chris: 10.00\n"
+        "2026-08-01,Oldest,10.00,Chris,equal,Chris: 10.00\n",
+    )
+
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        expenses = session.exec(
+            select(Expense).where(Expense.group_id == group.id).order_by(Expense.created_at.desc())
+        ).all()
+
+    assert [e.description for e in expenses] == ["Newest", "Middle", "Oldest"]
+    assert [e.created_at.date().isoformat() for e in expenses] == ["2026-08-14", "2026-08-14", "2026-08-01"]
+    # Same date, distinct timestamps — otherwise the feed's ordering of the
+    # two 2026-08-14 rows would be arbitrary.
+    assert expenses[0].created_at != expenses[1].created_at
+
+
+def test_import_folds_a_category_onto_an_existing_spelling(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Hotel", "30.00", chris_id, [chris_id, alex_id], **_first_use("Lodging"))
+
+    _import_csv(
+        client,
+        slug,
+        "Expenses\n"
+        "Date,Description,Category,Amount,Payer,Split Type,Participants & Shares\n"
+        "2026-08-14,Motel,lodging,10.00,Chris,equal,Chris: 10.00\n",
+    )
+
+    assert _expense_by_description(slug, "Motel").category == "Lodging"
+
+
+def test_preview_writes_nothing(client: TestClient):
+    slug = _create_group(client)
+    client.post(f"/g/{slug}/identify", data={"new_name": "Importer"}, follow_redirects=False)
+
+    response = client.post(
+        f"/g/{slug}/import/preview",
+        files={
+            "file": (
+                "export.csv",
+                b"Expenses\nDate,Description,Amount,Payer,Split Type,Participants & Shares\n"
+                b"2026-08-14,Dinner,10.00,Chris,equal,Chris: 10.00\n",
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Dinner" in response.text
+    assert "Chris" in response.text
+    assert _expense_by_description(slug, "Dinner") is None
+    assert sorted(_members_by_name(slug)) == ["Importer"]
+
+
+def test_a_file_with_a_bad_row_is_refused_and_writes_nothing(client: TestClient):
+    slug = _create_group(client)
+    client.post(f"/g/{slug}/identify", data={"new_name": "Importer"}, follow_redirects=False)
+
+    response = _import_csv(
+        client,
+        slug,
+        "Expenses\n"
+        "Date,Description,Amount,Payer,Split Type,Participants & Shares\n"
+        "2026-08-14,Dinner,10.00,Chris,equal,Chris: 4.00; Alex: 5.00\n",
+    )
+
+    assert response.status_code == 400
+    assert "Row 3" in response.text
+    assert _expense_by_description(slug, "Dinner") is None
+    assert sorted(_members_by_name(slug)) == ["Importer"]
+
+
+def test_confirm_revalidates_rather_than_trusting_the_hidden_field(client: TestClient):
+    """The CSV crosses the two steps through the browser, so the confirm route
+    re-parses it instead of taking it on trust."""
+    slug = _create_group(client)
+    client.post(f"/g/{slug}/identify", data={"new_name": "Importer"}, follow_redirects=False)
+
+    response = client.post(
+        f"/g/{slug}/import/confirm",
+        data={
+            "csv_text": "Expenses\nDate,Description,Amount,Payer,Split Type,Participants & Shares\n"
+            "2026-08-14,Tampered,10.00,Chris,equal,Chris: 99.00\n"
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert _expense_by_description(slug, "Tampered") is None
+
+
+def test_a_file_that_is_not_an_export_is_refused(client: TestClient):
+    slug = _create_group(client)
+    client.post(f"/g/{slug}/identify", data={"new_name": "Importer"}, follow_redirects=False)
+
+    response = _import_csv(client, slug, "name,total\nDinner,100\n")
+
+    assert response.status_code == 400
+    assert "doesn&#39;t look like an exported CSV" in response.text
+
+
+def test_import_appends_and_leaves_existing_rows_alone(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _setup_dinner_and_taxi(client, slug)
+    before = _balances(slug)
+
+    _import_csv(
+        client,
+        slug,
+        "Expenses\n"
+        "Date,Description,Amount,Payer,Split Type,Participants & Shares\n"
+        "2026-08-14,Breakfast,10.00,Chris,exact,Chris: 5.00; Alex: 5.00\n",
+    )
+
+    after = _balances(slug)
+    assert _expense_by_description(slug, "Dinner") is not None
+    assert after[chris_id] == before[chris_id] + 500
+    assert after[alex_id] == before[alex_id] - 500
+
+
+def test_import_page_bounces_an_unidentified_visitor(client: TestClient):
+    slug = _create_group(client)
+    stranger = TestClient(client.app)
+
+    response = stranger.get(f"/g/{slug}/import", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/g/{slug}/identify"
+
+
+def test_import_flash_counts_read_as_a_sentence(client: TestClient):
+    slug = _create_group(client)
+    client.post(f"/g/{slug}/identify", data={"new_name": "Importer"}, follow_redirects=False)
+
+    response = _import_csv(
+        client,
+        slug,
+        "Expenses\n"
+        "Date,Description,Amount,Payer,Split Type,Participants & Shares\n"
+        "2026-08-14,Dinner,10.00,Chris,equal,Chris: 10.00\n"
+        "\nSettlements\nDate,From,To,Amount\n2026-08-15,Alex,Chris,5.00\n",
+    )
+
+    assert response.status_code == 303
+    assert "Imported%201%20expense%2C%201%20settlement%2C%202%20new%20members." in response.headers["location"]
+
+
+def test_dashboard_links_to_the_import_page(client: TestClient):
+    slug = _create_group(client)
+    client.post(f"/g/{slug}/identify", data={"new_name": "Chris"}, follow_redirects=False)
+
+    page = client.get(f"/g/{slug}")
+
+    assert f'href="/g/{slug}/import"' in page.text

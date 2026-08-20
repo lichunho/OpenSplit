@@ -162,7 +162,11 @@ since one browser holds one identity per group.
     touch `created_at`), balances follow, and the expense still has exactly three share
     rows. Soft-delete it → the Edit control disappears until it is restored.
 11. `export.csv` opens in a spreadsheet and reconciles with the dashboard.
-12. **The test only production can run:** idle for 20 minutes, come back, and confirm the app
+12. **Round-trip it:** create a second, empty group, import that same `export.csv`, and
+    confirm the two dashboards show **identical balances** and the same roster. Then move a
+    column in the file, add a junk column, and import again into a third group — it must
+    still work, which is the whole point of matching columns by name.
+13. **The test only production can run:** idle for 20 minutes, come back, and confirm the app
     is *slow but does not 500*. That is the Neon-suspend trap proving fixed, and no local
     test can substitute for it.
 
@@ -186,6 +190,14 @@ since one browser holds one identity per group.
 7. **Settle up** when you're squaring away. The app suggests who to pay, but paying anyone
    directly is fine — balances net out the same either way.
 8. **Export to CSV** any time. The Expenses section carries a Category column.
+9. **Import a CSV** from the same link on the group page. Upload a file shaped like the
+   export — an **Expenses** section and, optionally, a **Settlements** one, each with its own
+   header row. Columns are matched **by name**, so their order doesn't matter and extra
+   columns are ignored; a file exported by an older version still imports. Anyone named in
+   the file who isn't in the group yet is added to the roster. You get a preview of
+   everything that will be created, including new members, before anything is saved.
+   Importing **adds** — it never changes or removes what's already there, so importing the
+   same file twice gives you two copies of it.
 
 Mistyped something? Everything is soft-deleted, so **delete and restore both work** on
 expenses and settlements.

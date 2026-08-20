@@ -966,6 +966,57 @@ label.checkbox input {
 }
 
 /* ---------------------------------------------------------------------------
+   CSV import
+   --------------------------------------------------------------------------- */
+
+/* The shared input rule above gives every field 0.6rem of padding and a 44px
+   min-height, which a file input renders as a squashed button floating in a
+   tall box. It brings its own control, so it only needs the border. */
+input[type="file"] {
+  padding: 0.5rem;
+  line-height: 1.6;
+}
+
+.import-errors {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+}
+
+.import-errors li {
+  margin-bottom: 0.25rem;
+  font-weight: 400;
+}
+
+/* A preview table is the one wide thing in this app. It scrolls inside its
+   own box rather than making the whole page scroll sideways on a phone. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.import-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.import-table th,
+.import-table td {
+  text-align: left;
+  padding: 0.45rem 0.7rem 0.45rem 0;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.import-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.import-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* ---------------------------------------------------------------------------
    Motion
    --------------------------------------------------------------------------- */
 

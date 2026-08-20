@@ -66,7 +66,16 @@ you don't fully trust — this is the wrong tool.
   whole group. A per-category "balance" would be a number that looks spendable but that
   nobody actually owes, which is exactly the kind of plausible-but-wrong figure this app is
   built to avoid.
-- **CSV export.** So the data is yours and the ledger is auditable outside the app.
+- **CSV export, and import of the same file.** So the data is yours: auditable in a
+  spreadsheet, and portable back in — to move a group to a fresh link, restore a backup, or
+  seed a group from a spreadsheet you already keep. Two choices worth naming. The importer
+  matches **columns by name, not position**, because the export's shape keeps moving
+  (Category arrived after the first release) and a file exported by last month's version
+  must keep importing; unrecognised columns are ignored rather than refused. And an import
+  **appends** — it never replaces or reconciles against what the group already has. Merging
+  two ledgers means guessing which rows are the same row, and a wrong guess silently changes
+  what somebody owes. Duplicates are visible and undoable; a bad merge is neither. The
+  preview screen is the guard, and it names anyone who will be added to the roster.
 - **Soft delete with undo.** Nothing is ever really deleted, because a mistyped expense is
   the most common error in an app like this.
 - **Expense editing.** The same form, reopened on an existing expense. An edit rewrites that

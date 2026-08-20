@@ -2,7 +2,7 @@
 
 An open-source clone of Splitwise for splitting shared expenses within a friend group —
 equal and exact splits, running balances, simplified debt suggestions, recorded settlements,
-and CSV export.
+and CSV export/import.
 
 There are no accounts, no email, no OAuth. A group lives at a secret link; you identify
 yourself by picking your name from a list.
@@ -67,7 +67,7 @@ preserving across a schema change.**
 ## Scope
 
 **In:** equal and exact splits, running balances, simplified debt suggestions, a recorded
-settlement flow, expense editing, CSV export, soft delete with undo.
+settlement flow, expense editing, CSV export and import, soft delete with undo.
 
 **Deliberately out:** real payment rails, multi-currency, member rename/delete, percentage
 or share splits, multi-payer expenses, notifications.

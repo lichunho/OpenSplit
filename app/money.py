@@ -1,11 +1,65 @@
 """
-Pure money math: split, balances, simplify.
+Pure money math: parse, split, balances, simplify.
 
 Imports nothing from the app — no DB, no models, no config. Every function
 takes and returns plain ints, dicts, tuples and lists, so tests can hit them
 directly. All money is integer cents; there are no floats in this module.
+
+The two parsers live here rather than beside the form that first needed them
+because three callers now share them — the expense form, the settle form and
+the CSV importer — and a route module is the wrong thing for a DB-free
+importer to import.
 """
 import heapq
+import re
+from decimal import Decimal, DecimalException, ROUND_HALF_UP
+
+# $1,000,000 sanity ceiling on a single expense — see CLAUDE.md's money
+# parsing note. Anything above this is almost certainly a typo (missing a
+# decimal point), not a real trip expense.
+_MAX_AMOUNT_CENTS = 100_000_000
+
+# Decimal() accepts far more than a money field should: "1e5" is a valid
+# Decimal worth $100,000, and "NaN"/"Infinity" parse without raising, so a
+# later `cents <= 0` guard never catches them. Gate on plain digits first.
+_AMOUNT_RE = re.compile(r"-?\d+(\.\d+)?")
+
+
+def parse_amount_cents(raw: str) -> int:
+    """Decimal string -> integer cents. Never float() anywhere in this app.
+    Rejects blank/non-numeric input, zero, negatives, and anything past the
+    sanity ceiling — always with a readable ValueError, never a 500."""
+    raw = (raw or "").strip()
+    if not raw:
+        raise ValueError("Enter an amount.")
+    if not _AMOUNT_RE.fullmatch(raw):
+        raise ValueError("Enter a valid amount.")
+    try:
+        cents = int((Decimal(raw) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except (DecimalException, ValueError):
+        raise ValueError("Enter a valid amount.")
+    if cents <= 0:
+        raise ValueError("Amount must be greater than zero.")
+    if cents > _MAX_AMOUNT_CENTS:
+        raise ValueError("Amount is too large (over $1,000,000).")
+    return cents
+
+
+def parse_share_cents(raw: str) -> int:
+    """Same parsing as parse_amount_cents, but zero (and a blank field) is
+    allowed — an exact split can include someone who skipped the appetizer."""
+    raw = (raw or "").strip()
+    if not raw:
+        return 0
+    if not _AMOUNT_RE.fullmatch(raw):
+        raise ValueError("Enter a valid amount for each participant.")
+    try:
+        cents = int((Decimal(raw) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except (DecimalException, ValueError):
+        raise ValueError("Enter a valid amount for each participant.")
+    if cents < 0:
+        raise ValueError("Shares can't be negative.")
+    return cents
 
 
 def split_equal(total_cents, member_ids):

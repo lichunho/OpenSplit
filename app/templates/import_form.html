@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Import CSV{% endblock %}
+{% block wrap_class %}wrap--medium{% endblock %}
+{% block content %}
+  <a class="back-link" href="/g/{{ group.slug }}">&larr; {{ group.name }}</a>
+  <h1>Import from CSV</h1>
+
+  <div class="card">
+    {% if errors %}
+      <p class="error">This file can't be imported yet:</p>
+      <ul class="import-errors">
+        {% for message in errors %}<li class="error">{{ message }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+
+    <p class="hint">
+      Upload a file in the same shape as this app's export &mdash; an
+      <strong>Expenses</strong> section and, optionally, a <strong>Settlements</strong> one,
+      each with its own header row. Columns are matched by name, so their order doesn't
+      matter and extra columns are ignored. Anyone named in the file who isn't in the group
+      yet will be added.
+    </p>
+    <p class="hint">
+      Importing <strong>adds</strong> to this group; nothing already here is changed or
+      removed. You'll see exactly what will be created before anything is saved.
+    </p>
+
+    <form method="post" action="/g/{{ group.slug }}/import/preview" enctype="multipart/form-data">
+      <label for="file">CSV file</label>
+      <input type="file" id="file" name="file" accept=".csv,text/csv" required>
+
+      <div class="submit-bar">
+        <button type="submit">Preview import</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

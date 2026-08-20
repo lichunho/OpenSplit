@@ -9,8 +9,6 @@ both share _validated_expense and _render_form below.
 """
 import csv
 import io
-import re
-from decimal import Decimal, DecimalException, ROUND_HALF_UP
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
@@ -21,7 +19,13 @@ from sqlmodel import Session, select
 from app.auth import is_redirect, require_member
 from app.config import TEMPLATES_DIR
 from app.db import get_session
-from app.money import net_balances, split_equal, validate_exact
+from app.money import (
+    net_balances,
+    parse_amount_cents,
+    parse_share_cents,
+    split_equal,
+    validate_exact,
+)
 from app.models import Expense, Settlement, Share
 from app.queries import (
     balance_inputs,
@@ -34,11 +38,6 @@ from app.queries import (
 router = APIRouter()
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-# $1,000,000 sanity ceiling on a single expense — see CLAUDE.md's money
-# parsing note. Anything above this is almost certainly a typo (missing a
-# decimal point), not a real trip expense.
-_MAX_AMOUNT_CENTS = 100_000_000
-
 # Matches the maxlength on the form's custom-category input.
 _MAX_CATEGORY_LEN = 40
 
@@ -47,48 +46,6 @@ _MAX_CATEGORY_LEN = 40
 # can never also be a stored category — an option whose value is the sentinel
 # would be read back as "Custom…" on the next render.
 _CUSTOM_CATEGORY = "__custom__"
-
-# Decimal() accepts far more than a money field should: "1e5" is a valid
-# Decimal worth $100,000, and "NaN"/"Infinity" parse without raising, so a
-# later `cents <= 0` guard never catches them. Gate on plain digits first.
-_AMOUNT_RE = re.compile(r"-?\d+(\.\d+)?")
-
-
-def parse_amount_cents(raw: str) -> int:
-    """Decimal string -> integer cents. Never float() anywhere in this app.
-    Rejects blank/non-numeric input, zero, negatives, and anything past the
-    sanity ceiling — always with a readable ValueError, never a 500."""
-    raw = (raw or "").strip()
-    if not raw:
-        raise ValueError("Enter an amount.")
-    if not _AMOUNT_RE.fullmatch(raw):
-        raise ValueError("Enter a valid amount.")
-    try:
-        cents = int((Decimal(raw) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-    except (DecimalException, ValueError):
-        raise ValueError("Enter a valid amount.")
-    if cents <= 0:
-        raise ValueError("Amount must be greater than zero.")
-    if cents > _MAX_AMOUNT_CENTS:
-        raise ValueError("Amount is too large (over $1,000,000).")
-    return cents
-
-
-def _parse_share_cents(raw: str) -> int:
-    """Same parsing as parse_amount_cents, but zero (and a blank field) is
-    allowed — an exact split can include someone who skipped the appetizer."""
-    raw = (raw or "").strip()
-    if not raw:
-        return 0
-    if not _AMOUNT_RE.fullmatch(raw):
-        raise ValueError("Enter a valid amount for each participant.")
-    try:
-        cents = int((Decimal(raw) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-    except (DecimalException, ValueError):
-        raise ValueError("Enter a valid amount for each participant.")
-    if cents < 0:
-        raise ValueError("Shares can't be negative.")
-    return cents
 
 
 def _chosen_category(form, known: list[str]) -> str | None:
@@ -167,7 +124,7 @@ def _validated_expense(
     if split_type == "equal":
         shares = split_equal(total_cents, participant_ids)
     else:
-        shares = {pid: _parse_share_cents(form.get(f"share_{pid}", "")) for pid in participant_ids}
+        shares = {pid: parse_share_cents(form.get(f"share_{pid}", "")) for pid in participant_ids}
         validate_exact(total_cents, shares)
 
     return description, total_cents, split_type, payer_id, shares, _chosen_category(
