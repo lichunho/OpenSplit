@@ -1,16 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Splitwise Clone{% endblock %}
+{% block wrap_class %}wrap--medium{% endblock %}
 {% block content %}
-  <h1>Splitwise Clone</h1>
-  <p>Split expenses with a friend group — no accounts, just a link.</p>
-
-  {% if error %}<p class="error">{{ error }}</p>{% endif %}
-
-  <form method="post" action="/groups">
-    <label for="name">Group name</label>
-    <input type="text" id="name" name="name" required maxlength="80" autofocus>
-    <div class="submit-bar">
-      <button type="submit">Create group</button>
+  <div class="hero">
+    <div>
+      <h1>Split expenses without the accounts.</h1>
+      <p class="hero-lede">
+        Create a group, share the link, and everyone adds what they paid.
+        No sign-up, no email, no app to install.
+      </p>
     </div>
-  </form>
+
+    <div class="card">
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+      <form method="post" action="/groups">
+        <label for="name">Group name</label>
+        <input type="text" id="name" name="name" required maxlength="80" autofocus
+               placeholder="Trip to Kyoto">
+        <div class="submit-bar">
+          <button type="submit">Create group</button>
+        </div>
+      </form>
+    </div>
+  </div>
 {% endblock %}

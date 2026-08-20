@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>{% block title %}Splitwise Clone{% endblock %}</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -14,7 +15,12 @@
   <div id="loading-indicator" class="loading-indicator" role="status" aria-live="polite" hidden>
     Waking up &mdash; this can take a minute on the free tier.
   </div>
-  <main class="wrap">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="/">Splitwise Clone</a>
+    </div>
+  </header>
+  <main class="wrap {% block wrap_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>
   <script src="/static/app.js" defer></script>

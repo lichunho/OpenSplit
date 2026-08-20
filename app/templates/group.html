@@ -1,135 +1,150 @@
 {% extends "base.html" %}
 {% block title %}{{ group.name }}{% endblock %}
+{% block wrap_class %}wrap--wide{% endblock %}
 {% block content %}
-  <h1>{{ group.name }}</h1>
-  {% if flash %}<p class="flash">{{ flash }}</p>{% endif %}
-  <p>You're identified as <strong>{{ me.name }}</strong>.
-    <form method="post" action="/g/{{ group.slug }}/switch" class="inline">
-      <button type="submit">Not you?</button>
-    </form>
-  </p>
-
-  <p class="primary-cta"><a class="button-link" href="/g/{{ group.slug }}/expenses/new">+ Add expense</a></p>
-
-  <section>
-    <label for="link">Share this link</label>
-    <div class="share-link-row">
-      <input type="text" id="link" readonly value="{{ request.url_for('group_dashboard', slug=group.slug) }}"
-             onclick="this.select()">
-      <!-- Hidden until app.js confirms the Clipboard API actually works in
-           this context (it needs https, so it won't on plain http:// LAN
-           dev) — a button that's shown always works; the input above is
-           always the fallback (click to select, then copy manually). -->
-      <button type="button" id="copy-link-btn" hidden>Copy link</button>
+  <header class="page-head">
+    <div>
+      <h1>{{ group.name }}</h1>
+      <div class="identity">You're identified as <strong>{{ me.name }}</strong>.
+        <form method="post" action="/g/{{ group.slug }}/switch" class="inline">
+          <button type="submit" class="link-button">Not you?</button>
+        </form>
+      </div>
     </div>
-    <p id="copy-link-status" class="hint" role="status" aria-live="polite"></p>
-    <p><a href="/g/{{ group.slug }}/export.csv" download>Download as CSV</a></p>
-  </section>
+    <p class="primary-cta"><a class="button-link" href="/g/{{ group.slug }}/expenses/new">+ Add expense</a></p>
+  </header>
+
+  {% if flash %}<p class="flash">{{ flash }}</p>{% endif %}
 
   {% macro dollars(cents) -%}
     {{ group.currency_symbol }}{{ "%d.%02d"|format(cents // 100, cents % 100) }}
   {%- endmacro %}
 
-  <section>
-    <h2>Balances</h2>
-    {% if balances %}
-      <ul class="balance-list">
-        {% for row in balances %}
-          <li class="{% if row.cents > 0 %}balance-positive{% elif row.cents < 0 %}balance-negative{% else %}balance-zero{% endif %}">
-            {% if row.cents > 0 -%}
-              {{ 'You' if row.is_me else row.name }} {{ 'are' if row.is_me else 'is' }} owed {{ dollars(row.cents) }}
-            {%- elif row.cents < 0 -%}
-              {{ 'You' if row.is_me else row.name }} {{ 'owe' if row.is_me else 'owes' }} {{ dollars(-row.cents) }}
-            {%- else -%}
-              {{ 'You' if row.is_me else row.name }} {{ 'are' if row.is_me else 'is' }} settled up
-            {%- endif %}
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p>No members yet — add someone below to get started.</p>
-    {% endif %}
-  </section>
+  <div class="dashboard">
+    <section class="card">
+      <h2>Activity</h2>
+      {% if activity %}
+        <ul class="expense-list">
+          {% for item in activity %}
+            {% if item.type == "expense" %}
+              <li class="{% if item.expense.deleted_at %}deleted{% endif %}">
+                <div class="activity-main">
+                  <div class="expense-desc">
+                    <span class="activity-title">{{ item.expense.description }}</span>
+                    <span class="expense-meta">paid by {{ item.payer_name }}</span>
+                  </div>
+                  <span class="money">{{ dollars(item.expense.amount_cents) }}</span>
+                </div>
+                {% if item.expense.deleted_at %}
+                  <form method="post" action="/g/{{ group.slug }}/expenses/{{ item.expense.id }}/restore" class="inline">
+                    <button type="submit" class="button-quiet">Restore</button>
+                  </form>
+                {% else %}
+                  <form method="post" action="/g/{{ group.slug }}/expenses/{{ item.expense.id }}/delete" class="inline">
+                    <button type="submit" class="button-quiet">Delete</button>
+                  </form>
+                {% endif %}
+              </li>
+            {% else %}
+              <li class="{% if item.settlement.deleted_at %}deleted{% endif %}">
+                <div class="activity-main">
+                  <div class="expense-desc">
+                    <span class="activity-title">{{ item.from_name }} paid {{ item.to_name }}</span>
+                    <span class="expense-meta">settlement</span>
+                  </div>
+                  <span class="money">{{ dollars(item.settlement.amount_cents) }}</span>
+                </div>
+                {% if item.settlement.deleted_at %}
+                  <form method="post" action="/g/{{ group.slug }}/settlements/{{ item.settlement.id }}/restore" class="inline">
+                    <button type="submit" class="button-quiet">Restore</button>
+                  </form>
+                {% else %}
+                  <form method="post" action="/g/{{ group.slug }}/settlements/{{ item.settlement.id }}/delete" class="inline">
+                    <button type="submit" class="button-quiet">Delete</button>
+                  </form>
+                {% endif %}
+              </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No activity yet — add your first expense above to get started.</p>
+      {% endif %}
+    </section>
 
-  <section>
-    <h2>Suggested settlements</h2>
-    {% if transfers %}
-      <ul class="transfer-list">
-        {% for t in transfers %}
-          <li>{{ t.debtor_name }} pays {{ t.creditor_name }} {{ dollars(t.amount_cents) }}</li>
-        {% endfor %}
-      </ul>
-      <p class="hint">
-        These are one way to settle up, not the only way — paying anyone directly is fine,
-        balances net out the same either way. The suggestion can shift day to day even though
-        no one's balance above changed; that's normal.
-      </p>
-    {% else %}
-      <p>Everyone's settled up — no suggested payments.</p>
-    {% endif %}
-    <p><a class="button-link button-link--secondary" href="/g/{{ group.slug }}/settle">Settle up</a></p>
-  </section>
+    <aside class="col-side">
+      <section class="card">
+        <h2>Balances</h2>
+        {% if balances %}
+          <ul class="balance-list">
+            {% for row in balances %}
+              <li class="{% if row.cents > 0 %}balance-positive{% elif row.cents < 0 %}balance-negative{% else %}balance-zero{% endif %}">
+                <span class="balance-who">{{ 'You' if row.is_me else row.name }}</span>
+                {% if row.cents > 0 -%}
+                  <span class="balance-state">{{ 'are' if row.is_me else 'is' }} owed</span>
+                  <span class="money">{{ dollars(row.cents) }}</span>
+                {%- elif row.cents < 0 -%}
+                  <span class="balance-state">{{ 'owe' if row.is_me else 'owes' }}</span>
+                  <span class="money">{{ dollars(-row.cents) }}</span>
+                {%- else -%}
+                  <span class="balance-state">{{ 'are' if row.is_me else 'is' }} settled up</span>
+                {%- endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p>No members yet — add someone below to get started.</p>
+        {% endif %}
+      </section>
 
-  <section>
-    <h2>Members</h2>
-    <ul>
-      {% for m in members %}
-        <li>{{ m.name }}{% if m.id == me.id %} (you){% endif %}</li>
-      {% endfor %}
-    </ul>
-  </section>
+      <section class="card">
+        <h2>Suggested settlements</h2>
+        {% if transfers %}
+          <ul class="transfer-list">
+            {% for t in transfers %}
+              <li><span class="transfer-who">{{ t.debtor_name }} pays {{ t.creditor_name }}</span><span class="money">{{ dollars(t.amount_cents) }}</span></li>
+            {% endfor %}
+          </ul>
+          <p class="hint">
+            These are one way to settle up, not the only way — paying anyone directly is fine,
+            balances net out the same either way. The suggestion can shift day to day even though
+            no one's balance above changed; that's normal.
+          </p>
+        {% else %}
+          <p>Everyone's settled up — no suggested payments.</p>
+        {% endif %}
+        <p class="primary-cta"><a class="button-link button-link--secondary" href="/g/{{ group.slug }}/settle">Settle up</a></p>
+      </section>
 
-  <section>
-    <h2>Add a member</h2>
-    <form method="post" action="/g/{{ group.slug }}/members">
-      <label for="member_name">Name</label>
-      <input type="text" id="member_name" name="name" maxlength="80" required>
-      <button type="submit">Add</button>
-    </form>
-  </section>
+      <section class="card">
+        <h2>Members</h2>
+        <ul class="member-list">
+          {% for m in members %}
+            <li>{{ m.name }}{% if m.id == me.id %} <span class="tag">you</span>{% endif %}</li>
+          {% endfor %}
+        </ul>
+        <form method="post" action="/g/{{ group.slug }}/members" class="add-member">
+          <label for="member_name" class="sr-only">Add a member</label>
+          <input type="text" id="member_name" name="name" maxlength="80" required placeholder="Add a member">
+          <button type="submit">Add</button>
+        </form>
+      </section>
 
-  <section>
-    <h2>Activity</h2>
-    {% if activity %}
-      <ul class="expense-list">
-        {% for item in activity %}
-          {% if item.type == "expense" %}
-            <li class="{% if item.expense.deleted_at %}deleted{% endif %}">
-              <div class="expense-desc">
-                {{ item.expense.description }} — {{ dollars(item.expense.amount_cents) }}
-                <span class="expense-meta">paid by {{ item.payer_name }}</span>
-              </div>
-              {% if item.expense.deleted_at %}
-                <form method="post" action="/g/{{ group.slug }}/expenses/{{ item.expense.id }}/restore" class="inline">
-                  <button type="submit">Restore</button>
-                </form>
-              {% else %}
-                <form method="post" action="/g/{{ group.slug }}/expenses/{{ item.expense.id }}/delete" class="inline">
-                  <button type="submit">Delete</button>
-                </form>
-              {% endif %}
-            </li>
-          {% else %}
-            <li class="{% if item.settlement.deleted_at %}deleted{% endif %}">
-              <div class="expense-desc">
-                {{ item.from_name }} paid {{ item.to_name }} {{ dollars(item.settlement.amount_cents) }}
-                <span class="expense-meta">settlement</span>
-              </div>
-              {% if item.settlement.deleted_at %}
-                <form method="post" action="/g/{{ group.slug }}/settlements/{{ item.settlement.id }}/restore" class="inline">
-                  <button type="submit">Restore</button>
-                </form>
-              {% else %}
-                <form method="post" action="/g/{{ group.slug }}/settlements/{{ item.settlement.id }}/delete" class="inline">
-                  <button type="submit">Delete</button>
-                </form>
-              {% endif %}
-            </li>
-          {% endif %}
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p>No activity yet — add your first expense above to get started.</p>
-    {% endif %}
-  </section>
+      <section class="card">
+        <h2>Share this link</h2>
+        <label for="link" class="sr-only">Share this link</label>
+        <div class="share-link-row">
+          <input type="text" id="link" readonly value="{{ request.url_for('group_dashboard', slug=group.slug) }}"
+                 onclick="this.select()">
+          <!-- Hidden until app.js confirms the Clipboard API actually works in
+               this context (it needs https, so it won't on plain http:// LAN
+               dev) — a button that's shown always works; the input above is
+               always the fallback (click to select, then copy manually). -->
+          <button type="button" id="copy-link-btn" hidden>Copy link</button>
+        </div>
+        <p id="copy-link-status" class="hint" role="status" aria-live="polite"></p>
+        <p class="card-footer-link"><a href="/g/{{ group.slug }}/export.csv" download>Download as CSV</a></p>
+      </section>
+    </aside>
+  </div>
 {% endblock %}

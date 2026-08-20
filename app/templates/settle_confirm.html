@@ -1,33 +1,35 @@
 {% extends "base.html" %}
-{% block title %}Pay {{ payee_name }} — {{ group.name }}{% endblock %}
+{% block title %}Pay {{ payee_name }}{% endblock %}
 {% block content %}
-  <p><a href="/g/{{ group.slug }}/settle">&larr; Settle up</a></p>
+  <a class="back-link" href="/g/{{ group.slug }}/settle">&larr; Settle up</a>
   <h1>Pay {{ payee_name }}</h1>
 
-  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <div class="card">
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
-  <form method="post" action="/g/{{ group.slug }}/settle" id="settle-form"
-        data-payee-name="{{ payee_name }}" data-suggested-cents="{{ suggested_cents }}">
-    <input type="hidden" name="to_member_id" value="{{ to_member_id }}">
+    <form method="post" action="/g/{{ group.slug }}/settle" id="settle-form"
+          data-payee-name="{{ payee_name }}" data-suggested-cents="{{ suggested_cents }}">
+      <input type="hidden" name="to_member_id" value="{{ to_member_id }}">
 
-    <label for="from_member_id">Who paid?</label>
-    <select id="from_member_id" name="from_member_id" required>
-      {% for m in members %}
-        <option value="{{ m.id }}" {% if payer_id == m.id|string %}selected{% endif %}>
-          {{ 'Me' if m.id == me.id else m.name }}
-        </option>
-      {% endfor %}
-    </select>
+      <label for="from_member_id">Who paid?</label>
+      <select id="from_member_id" name="from_member_id" required>
+        {% for m in members %}
+          <option value="{{ m.id }}" {% if payer_id == m.id|string %}selected{% endif %}>
+            {{ 'Me' if m.id == me.id else m.name }}
+          </option>
+        {% endfor %}
+      </select>
 
-    <label for="amount">Amount ({{ group.currency_symbol }})</label>
-    <input type="text" inputmode="decimal" id="amount" name="amount" value="{{ amount }}" required>
-    <p id="settle-hint" class="hint">{{ hint }}</p>
+      <label for="amount">Amount ({{ group.currency_symbol }})</label>
+      <input type="text" inputmode="decimal" id="amount" name="amount" value="{{ amount }}" required>
+      <p id="settle-hint" class="hint">{{ hint }}</p>
 
-    <label for="note">Note (optional)</label>
-    <input type="text" id="note" name="note" maxlength="200" value="{{ note }}">
+      <label for="note">Note (optional)</label>
+      <input type="text" id="note" name="note" maxlength="200" value="{{ note }}">
 
-    <div class="submit-bar">
-      <button type="submit">Record payment</button>
-    </div>
-  </form>
+      <div class="submit-bar">
+        <button type="submit">Record payment</button>
+      </div>
+    </form>
+  </div>
 {% endblock %}

@@ -14,6 +14,7 @@ load-bearing.
 | Passwords | `hashlib.scrypt`, N=2¹⁴ r=8 p=1 | Stdlib; see trap #2 below |
 | Migrations | `create_all` (Alembic deferred) | See trap #3 below |
 | Hosting | Render free web service + Neon free Postgres | Render's disks are ephemeral and its own free Postgres is deleted after 30 days; Neon's free tier persists |
+| CSS | One token-driven stylesheet, dark mode via `prefers-color-scheme` | No build step; see the UI layer section |
 | JS | ~150 lines of vanilla JS | Expense-form toggle, settle hint, copy-link, cold-start indicator |
 
 The whole stack follows from one environment fact: **Node/npm are not installed** on the
@@ -151,6 +152,37 @@ it to `Decimal`.
 `(group, member)` or a redirect to the identify page — so every route calls
 `is_redirect(result)` before unpacking. Forgetting that check raises a loud `TypeError`
 rather than failing open.
+
+## UI layer
+
+One stylesheet, one script, no build step. `app/static/app.css` is a single hand-written
+file: **design tokens on `:root`, then components, then two media queries.** Every colour
+goes through a `var(--…)`, so the `@media (prefers-color-scheme: dark)` block redefines
+tokens only — it contains no layout or component rules, and there is exactly one definition
+of each rule in the file.
+
+Layout is mobile-first and grows by two breakpoints. Turn both off and what is left is the
+phone layout, which is the one that has to work one-handed at a restaurant table:
+
+| Width | What changes |
+|---|---|
+| base | Single column. `.wrap` caps at 480px. Sticky `.submit-bar` keeps the primary action reachable on long forms. |
+| ≥ 700px | Form pages split into two columns (`.form-cols`, `.hero`, `.two-col`); `.submit-bar` un-sticks into an ordinary right-aligned action. |
+| ≥ 960px | The dashboard becomes `minmax(0, 1fr) 22rem` — activity feed in the main column, a sticky rail holding Balances / Suggested settlements / Members / Share link. |
+
+Only `group.html` opts into the full width, via `{% block wrap_class %}wrap--wide{% endblock %}`
+on `base.html`'s `<main class="wrap …">`. Pages that split in two take `wrap--medium`;
+everything else keeps the 480px reading measure however wide the window is.
+
+Two conventions worth keeping:
+
+- **`:hover` rules live inside `@media (hover: hover) and (pointer: fine)`.** Touch devices
+  keep `:active` only, so a tap doesn't leave a row stuck in its hover state.
+- **The markup is load-bearing for some tests.** `test_routes.py` parses the dashboard for
+  the literal headings `<h2>Balances</h2>` and `<h2>Suggested settlements</h2>`, expects the
+  transfer `<li>` tags to carry no attributes and sit on one source line, and string-matches
+  the share-link input and the hidden copy button attribute-for-attribute. Restyle those
+  through their existing ids and classes rather than rewriting their tags.
 
 ## Auth
 

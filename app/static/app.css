@@ -1,4 +1,88 @@
-/* Mobile-first: this gets used one-handed at a restaurant table. */
+/* Mobile-first: this gets used one-handed at a restaurant table. Wider
+   viewports get a second and third column layered on top via two media
+   queries — the phone layout is what's left when both are switched off. */
+
+/* ---------------------------------------------------------------------------
+   Tokens
+   Every colour in this file goes through a variable so the dark block below
+   is the only other place a colour is written.
+   --------------------------------------------------------------------------- */
+
+:root {
+  --bg: #f4f6f9;
+  --surface: #fff;
+  --surface-sunken: #eef1f5;
+  --border: #e2e6ec;
+  --border-input: #cdd4dd;
+
+  --text: #14181f;
+  --text-muted: #5c6673;
+  --text-faint: #97a1ae;
+
+  --accent: #2a6df4;
+  --accent-hover: #1d54c4;
+  --accent-soft: #eaf0fe;
+  --on-accent: #fff;
+
+  --positive: #10783a;
+  --positive-soft: #e6f4ea;
+  --positive-border: #b7dfc0;
+  --negative: #b00020;
+
+  --warn-bg: #fff3cd;
+  --warn-text: #664d03;
+  --warn-border: #ffe69c;
+
+  --r-sm: 8px;
+  --r: 12px;
+  --r-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.07), 0 1px 3px rgba(16, 24, 40, 0.05);
+
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%235c6673' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* Tokens only — no layout or component rules belong in here, so there is
+   exactly one definition of every rule and two definitions of every colour. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216;
+    --surface: #171b22;
+    --surface-sunken: #1e232b;
+    --border: #272d37;
+    --border-input: #3a424e;
+
+    --text: #e7eaef;
+    --text-muted: #9aa4b2;
+    --text-faint: #6b7684;
+
+    /* Lifted off the light-mode blue: #2a6df4 on a near-black surface is
+       too dark to read comfortably, and too dark to carry white button text. */
+    --accent: #5b8dff;
+    --accent-hover: #7ba5ff;
+    --accent-soft: #1a2740;
+    --on-accent: #0f1216;
+
+    --positive: #4cc47c;
+    --positive-soft: #14301f;
+    --positive-border: #27543a;
+    --negative: #ff7b7b;
+
+    --warn-bg: #33290a;
+    --warn-text: #f0d68c;
+    --warn-border: #4d3e12;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
+
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%239aa4b2' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+   --------------------------------------------------------------------------- */
 
 * {
   box-sizing: border-box;
@@ -8,9 +92,81 @@ body {
   margin: 0;
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 16px;
-  line-height: 1.4;
-  color: #1a1a1a;
-  background: #fafafa;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Typography
+   --------------------------------------------------------------------------- */
+
+h1 {
+  font-size: 1.6rem;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  margin: 0 0 1rem;
+}
+
+.page-head h1,
+.hero h1 {
+  margin: 0;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.6rem;
+}
+
+/* Card headings are section labels, not headlines — small, spaced and quiet
+   so the figures inside them are what the eye lands on first. */
+.card > h2 {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 0.75rem;
+}
+
+.money {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   App chrome and page layout
+   --------------------------------------------------------------------------- */
+
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0.7rem 1rem;
+}
+
+.wordmark {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  text-decoration: none;
 }
 
 .wrap {
@@ -19,14 +175,188 @@ body {
   padding: 1rem;
 }
 
-h1 {
-  font-size: 1.5rem;
-  margin: 0.5rem 0;
+/* Only the dashboard opts into the full width; single-column form pages stay
+   a comfortable reading measure no matter how wide the window is. Pages that
+   split into two columns take the middle width. */
+.wrap--wide {
+  max-width: 1120px;
 }
 
-h2 {
-  font-size: 1.1rem;
+.wrap--medium {
+  max-width: 880px;
 }
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Card — the surface every section sits on
+   --------------------------------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-sm);
+  padding: 1rem 1.1rem;
+}
+
+/* Cards are never stacked by margin — every group of them is a grid whose
+   own gap does the spacing. */
+
+/* ---------------------------------------------------------------------------
+   Buttons and links
+   --------------------------------------------------------------------------- */
+
+input, select, button {
+  /* 16px is deliberate, not just the rem default: below this iOS Safari
+     zooms the viewport in on focus, which is disorienting one-handed. */
+  font-size: 16px;
+  font-family: inherit;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border-input);
+  border-radius: var(--r-sm);
+  min-height: 44px; /* thumb-sized tap target */
+}
+
+input, select {
+  background: var(--surface);
+  color: var(--text);
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.2rem;
+}
+
+button {
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-weight: 600;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+button:active {
+  background: var(--accent-hover);
+}
+
+/* A link styled to look and tap like a primary button — used for the main
+   call-to-action on a screen (Add expense, Settle up) where a plain text
+   link would be too small/easy to miss one-handed. */
+.button-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.6rem 1rem;
+  background: var(--accent);
+  color: var(--on-accent);
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  font-weight: 600;
+  text-align: center;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.button-link:active {
+  background: var(--accent-hover);
+}
+
+.button-link--secondary {
+  background: var(--surface);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.button-link--secondary:active {
+  background: var(--accent-soft);
+}
+
+/* A form button that has to read as plain text, because it sits mid-sentence
+   ("You're Chris. Not you?") where a filled blue block would shout. */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  min-height: 0;
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.link-button:active {
+  background: none;
+  color: var(--accent-hover);
+}
+
+/* Secondary, low-emphasis action — the Delete/Restore buttons in the feed. */
+.button-quiet {
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  border-color: var(--border);
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-height: 36px;
+  padding: 0.35rem 0.7rem;
+  flex-shrink: 0;
+}
+
+.button-quiet:active {
+  background: var(--border);
+  color: var(--text);
+}
+
+.primary-cta {
+  margin: 1rem 0 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button:hover {
+    background: var(--accent-hover);
+  }
+
+  .button-link:hover {
+    background: var(--accent-hover);
+  }
+
+  .button-link--secondary:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .link-button:hover {
+    background: none;
+    color: var(--accent-hover);
+  }
+
+  .button-quiet:hover {
+    background: var(--border);
+    color: var(--text);
+  }
+
+  input:hover, select:hover {
+    border-color: var(--text-faint);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Forms
+   --------------------------------------------------------------------------- */
 
 form {
   display: flex;
@@ -45,139 +375,11 @@ label {
   font-weight: 600;
 }
 
-input, select, button {
-  /* 16px is deliberate, not just the rem default: below this iOS Safari
-     zooms the viewport in on focus, which is disorienting one-handed. */
-  font-size: 16px;
-  padding: 0.6rem;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  min-height: 44px; /* thumb-sized tap target */
-}
-
-button {
-  background: #2a6df4;
-  color: #fff;
-  border: none;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-button:active {
-  background: #1d54c4;
-}
-
-/* A link styled to look and tap like a primary button — used for the main
-   call-to-action on a screen (Add expense, Settle up) where a plain text
-   link would be too small/easy to miss one-handed. */
-.button-link {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 44px;
-  padding: 0.6rem 1rem;
-  background: #2a6df4;
-  color: #fff;
-  text-decoration: none;
-  border-radius: 6px;
-  font-weight: 600;
-  text-align: center;
-}
-
-.button-link:active {
-  background: #1d54c4;
-}
-
-.button-link--secondary {
-  background: #fff;
-  color: #2a6df4;
-  border: 1px solid #2a6df4;
-}
-
-.button-link--secondary:active {
-  background: #eaf0fe;
-}
-
-.primary-cta {
-  margin: 1rem 0;
-}
-
-ul {
-  padding-left: 1.2rem;
-}
-
-.error {
-  color: #b00020;
-  font-weight: 600;
-}
-
-.flash {
-  background: #e6f4ea;
-  color: #1a7f37;
-  border: 1px solid #b7dfc0;
-  border-radius: 6px;
-  padding: 0.6rem 0.8rem;
-  font-weight: 600;
-}
-
-section {
-  margin: 1.5rem 0;
-}
-
-.share-link-row {
-  display: flex;
-  gap: 0.5rem;
-  align-items: stretch;
-}
-
-.share-link-row input {
-  flex: 1;
-  min-width: 0; /* lets the input shrink instead of forcing horizontal scroll at 360px */
-}
-
-.share-link-row button {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-#copy-link-status:not(:empty) {
-  color: #1a7f37;
-  font-weight: 600;
-}
-
-.loading-indicator {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: #fff3cd;
-  color: #664d03;
-  border-bottom: 1px solid #ffe69c;
-  padding: 0.6rem 1rem;
-  text-align: center;
-  font-size: 0.9rem;
-}
-
-/* Keeps a form's primary action reachable without scrolling on a long form
-   (the expense form especially) — it stays pinned to the bottom of the
-   viewport as the rest of the form scrolls underneath. */
-.submit-bar {
-  position: sticky;
-  bottom: 0;
-  background: #fafafa;
-  border-top: 1px solid #e5e5e5;
-  padding: 0.75rem 0;
-  margin-top: 0.5rem;
-}
-
-.submit-bar button {
-  width: 100%;
-}
-
 fieldset {
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
   padding: 0.75rem;
+  margin: 0;
 }
 
 legend {
@@ -205,6 +407,7 @@ label.checkbox input {
   height: 1.2rem;
   min-height: 0;
   padding: 0;
+  accent-color: var(--accent);
 }
 
 .participant-row {
@@ -227,11 +430,301 @@ label.checkbox input {
   display: none;
 }
 
+/* Keeps a form's primary action reachable without scrolling on a long form
+   (the expense form especially) — it stays pinned to the bottom of the
+   viewport as the rest of the form scrolls underneath. */
+.submit-bar {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  padding: 0.75rem 0;
+  margin-top: 0.5rem;
+}
+
+.submit-bar button {
+  width: 100%;
+}
+
+/* A form is already the card's content, so it brings no margin of its own. */
+.card form {
+  margin: 0;
+}
+
+.form-cols {
+  display: grid;
+  gap: 1rem;
+}
+
+.form-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Keeps a label with its input and its hint, so the identify page reads as
+   three separate choices rather than one undifferentiated stack of fields. */
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field-group + .field-group {
+  margin-top: 0.75rem;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+  color: var(--text-faint);
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+
+/* Visually hidden but still read aloud — used where a placeholder or a card
+   heading already carries the label's text on screen. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Banners and status text
+   --------------------------------------------------------------------------- */
+
+.error {
+  color: var(--negative);
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+}
+
+.flash {
+  background: var(--positive-soft);
+  color: var(--positive);
+  border: 1px solid var(--positive-border);
+  border-radius: var(--r-sm);
+  padding: 0.6rem 0.8rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
 .hint {
   font-size: 0.9rem;
-  color: #555;
+  color: var(--text-muted);
   min-height: 1.2em;
 }
+
+.loading-indicator {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border-bottom: 1px solid var(--warn-border);
+  padding: 0.6rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Dashboard
+   --------------------------------------------------------------------------- */
+
+.page-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.identity {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.dashboard {
+  display: grid;
+  gap: 1rem;
+}
+
+.col-side {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+/* ---------------------------------------------------------------------------
+   Balances
+   --------------------------------------------------------------------------- */
+
+.balance-list,
+.transfer-list,
+.member-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.balance-list li,
+.transfer-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.balance-list li:last-child,
+.transfer-list li:last-child {
+  border-bottom: none;
+}
+
+.balance-who,
+.transfer-who {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.balance-who {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Pushes the figure to the right edge so a column of amounts lines up. */
+.balance-state {
+  flex: 1;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.transfer-who {
+  flex: 1;
+}
+
+/* The figure carries the colour, not the whole row: a red name reads as an
+   error, a red amount reads as a debt. */
+.balance-positive .money {
+  color: var(--positive);
+}
+
+.balance-negative .money {
+  color: var(--negative);
+}
+
+.balance-zero .balance-who {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.transfer-list a {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.4rem 0;
+  margin: -0.4rem 0; /* cancels the li's own padding so the link is the full tap target, not just its text */
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Members
+   --------------------------------------------------------------------------- */
+
+.member-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.member-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 0.25rem 0.7rem;
+  font-size: 0.9rem;
+}
+
+.tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.add-member {
+  flex-direction: row;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.add-member input {
+  flex: 1;
+  min-width: 0; /* lets the input shrink instead of forcing horizontal scroll at 360px */
+}
+
+.add-member button {
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Share link
+   --------------------------------------------------------------------------- */
+
+.share-link-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.share-link-row input {
+  flex: 1;
+  min-width: 0; /* lets the input shrink instead of forcing horizontal scroll at 360px */
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.share-link-row button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+#copy-link-status:not(:empty) {
+  color: var(--positive);
+  font-weight: 600;
+}
+
+.card-footer-link {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Activity feed
+   --------------------------------------------------------------------------- */
 
 .expense-list {
   list-style: none;
@@ -245,13 +738,26 @@ label.checkbox input {
   justify-content: space-between;
   flex-wrap: wrap; /* keeps a long description + the delete/restore button from forcing horizontal scroll */
   gap: 0.5rem;
-  padding: 0.6rem 0;
-  border-bottom: 1px solid #e5e5e5;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.expense-list li:last-child {
+  border-bottom: none;
 }
 
 .expense-list li.deleted {
-  color: #999;
+  color: var(--text-faint);
   text-decoration: line-through;
+}
+
+.activity-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
 }
 
 .expense-desc {
@@ -259,49 +765,147 @@ label.checkbox input {
   overflow-wrap: break-word;
 }
 
+.activity-title {
+  font-weight: 600;
+}
+
 .expense-meta {
   display: block;
   font-size: 0.85rem;
-  color: #666;
+  color: var(--text-muted);
   text-decoration: none;
 }
 
-.expense-list button {
-  background: #eee;
-  color: #1a1a1a;
-  flex-shrink: 0;
+/* On a pointer device the row is quiet until you reach for it; on touch
+   (and for anyone tabbing through) the button stays fully visible, since
+   there is no hover to reveal it with. */
+@media (hover: hover) and (pointer: fine) {
+  .expense-list li .button-quiet {
+    opacity: 0.35;
+    transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+  }
+
+  .expense-list li:hover .button-quiet,
+  .expense-list li:focus-within .button-quiet {
+    opacity: 1;
+  }
 }
 
-.balance-list,
-.transfer-list {
-  list-style: none;
-  padding: 0;
+/* ---------------------------------------------------------------------------
+   Landing page
+   --------------------------------------------------------------------------- */
+
+.hero {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.hero h1 {
+  font-size: 2rem;
+}
+
+.hero-lede {
+  color: var(--text-muted);
+  margin: 0.6rem 0 0;
+}
+
+.hero .card form {
   margin: 0;
 }
 
-.balance-list li,
-.transfer-list li {
-  padding: 0.4rem 0;
-  border-bottom: 1px solid #e5e5e5;
+/* ---------------------------------------------------------------------------
+   Two-column pages (settle picker)
+   --------------------------------------------------------------------------- */
+
+.two-col {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
 }
 
-.transfer-list a {
-  display: block;
-  padding: 0.4rem 0;
-  margin: -0.4rem 0; /* cancels the li's own padding so the link is the full tap target, not just its text */
-  color: #2a6df4;
-  font-weight: 600;
-  text-decoration: none;
+/* ---------------------------------------------------------------------------
+   >= 700px: enough room for a second column on the form pages.
+   --------------------------------------------------------------------------- */
+
+@media (min-width: 700px) {
+  .wrap {
+    padding: 1.5rem 1rem;
+  }
+
+  .page-head {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  /* Only the page-head CTA sheds its full width — the one in the sidebar
+     stays a full-width block, since it is the card's footer action. */
+  .page-head .primary-cta {
+    margin: 0;
+    flex-shrink: 0;
+  }
+
+  .page-head .primary-cta .button-link {
+    width: auto;
+  }
+
+  .form-cols,
+  .hero,
+  .two-col {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hero {
+    align-items: center;
+    gap: 2.5rem;
+  }
+
+  /* There is no scroll to lose the button off the bottom of here, so it
+     stops being a pinned bar and becomes an ordinary right-aligned action. */
+  .submit-bar {
+    position: static;
+    background: none;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .submit-bar button {
+    width: auto;
+    min-width: 12rem;
+  }
 }
 
-.balance-positive {
-  color: #1a7f37;
+/* ---------------------------------------------------------------------------
+   >= 960px: the dashboard splits into feed + rail.
+   --------------------------------------------------------------------------- */
+
+@media (min-width: 960px) {
+  .dashboard {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+    align-items: start;
+  }
+
+  /* The rail holds the answer you came for (your balance); the feed beside
+     it is the long-scrolling half, so the rail follows you down it. */
+  .col-side {
+    position: sticky;
+    top: 1rem;
+  }
+
+  .col-side .card {
+    box-shadow: var(--shadow-md);
+  }
 }
 
-.balance-negative {
-  color: #b00020;
-}
+/* ---------------------------------------------------------------------------
+   Motion
+   --------------------------------------------------------------------------- */
 
-.balance-zero {
-  color: #555;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
 }
