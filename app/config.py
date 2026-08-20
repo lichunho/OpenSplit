@@ -33,3 +33,14 @@ SECRET_KEY = os.environ.get("SECRET_KEY", secrets.token_urlsafe(32))
 # no TLS). Default False so `uvicorn --reload` works out of the box; the
 # production deploy (milestone 9) must set SESSION_HTTPS_ONLY=true.
 SESSION_HTTPS_ONLY = os.environ.get("SESSION_HTTPS_ONLY", "false").lower() == "true"
+
+# Nothing in the repo forces the flag on any more — render.yaml used to, and the
+# Lambda deploy sets it in a hand-written env.json that is easy to forget on a
+# redeploy. A Postgres URL means this is a deploy rather than local dev or the
+# suite (both SQLite), so that pair can only be a mistake. Fail at import: a
+# missing Secure flag is invisible in a working app.
+if DATABASE_URL.startswith("postgres") and not SESSION_HTTPS_ONLY:
+    raise RuntimeError(
+        "SESSION_HTTPS_ONLY must be 'true' when DATABASE_URL points at Postgres; "
+        "without it the session cookie ships without the Secure flag."
+    )

@@ -50,7 +50,7 @@ Full design rationale lives in the implementation plan at `~/.claude/plans/the-g
 
 ## Current state
 
-**All nine milestones of the implementation plan are built and committed** on the `build/v1` branch, with 133 tests passing. The app is deployed to AWS Lambda behind a Function URL with Neon Postgres, and cold starts have been measured there (~2.4s warm-image cold start; ~13s on the first request after a new image). Render was evaluated and retired; `render.yaml` is gone, and its history is the only place that deploy path still exists. Still not confirmed: the 20-minute-idle test that is the only real proof trap #1 is fixed.
+**All nine milestones of the implementation plan are built and committed** on the `build/v1` branch, with 135 tests passing. The app is deployed to AWS Lambda behind a Function URL with Neon Postgres, and cold starts have been measured there (~2.4s warm-image cold start; ~13s on the first request after a new image). Render was evaluated and retired; `render.yaml` is gone, and its history is the only place that deploy path still exists.
 
 ## Stack
 
@@ -94,7 +94,7 @@ app/
   templates/    base, index, identify, group, expense_form, settle_pick, settle_confirm,
                 import_form, import_preview
   static/       app.css, app.js, robots.txt
-tests/          test_money.py, test_routes.py, test_csv_import.py
+tests/          test_money.py, test_routes.py, test_csv_import.py, test_db.py, test_config.py
 ```
 
 Invariants that span files:

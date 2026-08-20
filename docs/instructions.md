@@ -69,8 +69,11 @@ local development.
 **On `SESSION_HTTPS_ONLY`:** a `Secure` cookie is not sent by browsers over plain `http://`,
 so setting this to `true` locally would silently break sign-in on `127.0.0.1`. It defaults
 to `false` so local development works, and the deploy sets it to `true` through the
-function's environment (see `env.json` under [Deploying](#deploying)). However you deploy,
-**you must set it yourself** or the session cookie ships without the `Secure` flag.
+function's environment (see `env.json` under [Deploying](#deploying)). Forgetting it on a
+redeploy would ship the session cookie without the `Secure` flag in an app that otherwise
+looks fine, so `config.py` refuses to start when `DATABASE_URL` points at Postgres and this
+is not `true`. If a deploy dies at import with that `RuntimeError`, this is the fix — set
+the variable rather than removing the check.
 
 Real secrets never belong in the repo. `.env`, `*.db`, `.venv/`, `export.csv` and
 `archive/` are all gitignored.

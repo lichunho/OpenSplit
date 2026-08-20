@@ -39,14 +39,18 @@ app/
   templates/     base, index, identify, group, expense_form, settle_pick, settle_confirm,
                  import_form, import_preview
   static/        app.css, app.js, robots.txt
-tests/           test_money.py (28), test_routes.py (82), test_csv_import.py (17), test_db.py (6)
+tests/           test_money.py (28), test_routes.py (82), test_csv_import.py (17), test_db.py (6),
+                 test_config.py (2)
 ```
 
 Rules that span files:
 
 - **`config.py` owns every `os.environ` read.** `db.py` imports `DATABASE_URL` from it;
   `auth.py` imports `SECRET_KEY`. Neither touches the environment directly. This keeps
-  configuration auditable in one place instead of scattered across modules.
+  configuration auditable in one place instead of scattered across modules. Owning both
+  values is also what lets it refuse to start on a Postgres `DATABASE_URL` with
+  `SESSION_HTTPS_ONLY` unset — a deploy whose session cookie would ship without `Secure`.
+  That check has to be loud, because the resulting app looks entirely healthy.
 - **`money.py` imports nothing from the app.** No DB, no models, no config — stdlib only
   (`heapq`, `re`, `decimal`). It takes and returns plain ints, dicts and tuples. This is what
   makes it testable without a web server or a database. The decimal-string parsers live here
