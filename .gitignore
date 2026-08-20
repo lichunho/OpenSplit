@@ -16,3 +16,8 @@ archive/
 # Python
 __pycache__/
 *.pyc
+
+# Neon CLI / agent tooling
+.neon
+.agents/
+skills-lock.json
