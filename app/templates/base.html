@@ -1,12 +1,14 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>{% block title %}Splitwise Clone{% endblock %}</title>
+  <title>{% block title %}OpenSplit{% endblock %}</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>
+
 <body>
   <!-- Hidden by default (the `hidden` attribute -> display:none via the UA
        stylesheet), so with JS disabled this never appears — the page just
@@ -17,7 +19,7 @@
   </div>
   <header class="topbar">
     <div class="topbar-inner">
-      <a class="wordmark" href="/">Splitwise Clone</a>
+      <a class="wordmark" href="/">OpenSplit</a>
     </div>
   </header>
   <main class="wrap {% block wrap_class %}{% endblock %}">
@@ -25,4 +27,5 @@
   </main>
   <script src="/static/app.js" defer></script>
 </body>
+
 </html>

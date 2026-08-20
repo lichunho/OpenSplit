@@ -3,7 +3,7 @@
 # Neon autosuspends after 5) and the create_all/no-migrations decision.
 services:
   - type: web
-    name: splitwise-clone
+    name: opensplit
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt

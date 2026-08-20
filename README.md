@@ -1,4 +1,4 @@
-# Splitwise-Clone
+# OpenSplit
 
 An open-source clone of Splitwise for splitting shared expenses within a friend group —
 equal and exact splits, running balances, simplified debt suggestions, recorded settlements,

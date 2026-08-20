@@ -10,7 +10,7 @@ import os
 import tempfile
 from pathlib import Path
 
-_tmp_dir = tempfile.mkdtemp(prefix="splitwise-clone-tests-")
+_tmp_dir = tempfile.mkdtemp(prefix="opensplit-tests-")
 os.environ["DATABASE_URL"] = f"sqlite:///{Path(_tmp_dir) / 'test.db'}"
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("SESSION_HTTPS_ONLY", "false")
