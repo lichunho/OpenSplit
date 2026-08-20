@@ -30,7 +30,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 # A group's whole history is a few hundred KB of CSV at most. The ceiling is
 # here so a wrong file (a video, a database dump) is refused with a sentence
-# instead of being parsed line by line on a free-tier dyno.
+# instead of being parsed line by line inside a Lambda invocation.
 _MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 
 

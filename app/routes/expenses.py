@@ -5,7 +5,7 @@ exact splits call money.py's validate_exact. money.py is DB-free by design
 lives here, not there.
 
 The add and edit forms validate identically and render the same template, so
-both share _validated_expense and _render_form below.
+both share _validated_expense and _submitted_values below.
 """
 import csv
 import io
@@ -359,7 +359,7 @@ def restore_expense(slug: str, expense_id: int, result=Depends(require_member), 
 
 
 @router.get("/g/{slug}/export.csv")
-def export_csv(slug: str, request: Request, result=Depends(require_member), session: Session = Depends(get_session)):
+def export_csv(slug: str, result=Depends(require_member), session: Session = Depends(get_session)):
     if is_redirect(result):
         return result
     group, _me = result

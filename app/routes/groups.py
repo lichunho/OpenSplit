@@ -39,8 +39,7 @@ def _activity_feed(session: Session, group_id: int, category: str | None = None)
     """Expenses and settlements merged into one list ordered by created_at
     (newest first) — the plan's activity feed. Soft-deleted rows of either
     kind stay in the list (the template strikes them through with a restore
-    control); only balance math excludes them. Settlements will simply be an
-    empty list until milestone 6 adds the routes that create them.
+    control); only balance math excludes them.
 
     `category` narrows the feed and nothing else: None shows everything, a
     name shows that category, and "" shows the uncategorized ones. Balances
@@ -101,7 +100,7 @@ def group_dashboard(slug: str, request: Request, result=Depends(require_member),
     members = get_members(session, group.id)
 
     # Three states, and no sentinel value needed for the third: a category can
-    # never be the empty string (_canonical_category maps blank to None), so
+    # never be the empty string (_chosen_category maps blank to None), so
     # absent -> everything, "" -> uncategorized only, "Food" -> that category.
     active_category = request.query_params.get("category")
     feed = _activity_feed(session, group.id, active_category)

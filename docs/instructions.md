@@ -34,7 +34,7 @@ the project root, and `SECRET_KEY` falls back to a key generated at startup.
 ## Testing
 
 ```bash
-pytest                                   # all 84 tests
+pytest                                   # all 135 tests
 pytest tests/test_money.py               # the money core only — fast, no DB
 pytest tests/test_money.py::test_name    # a single test
 pytest -q -W default                     # surface warnings
@@ -51,9 +51,11 @@ docker compose up                        # same app on :8000
 Environment variables pass through from your shell if set, with local defaults otherwise.
 No secret is baked into the image.
 
-> **Not yet exercised.** The Docker files are desk-checked and `docker compose config`
-> validates, but they have not been run against a live Docker daemon. If `docker compose up`
-> misbehaves, that's the likeliest place an error is hiding.
+> **The `Dockerfile` is exercised; this compose path is not.** The deployed Lambda image is
+> built from that same `Dockerfile` (see [Deploying](#deploying)), so the image itself is
+> known good. What hasn't been run against a live daemon is `docker compose up` specifically
+> — `docker compose config` validates and no further. If it misbehaves, that's the likeliest
+> place an error is hiding.
 
 ## Configuration
 

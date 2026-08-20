@@ -1,4 +1,4 @@
-# Slim Python 3.13 to match local dev (see CLAUDE.md: "the venv is Python 3.13").
+# Slim Python 3.13 to match local dev, where the venv is built with py -3.13.
 FROM python:3.13-slim
 
 WORKDIR /app

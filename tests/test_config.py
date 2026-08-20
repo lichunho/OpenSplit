@@ -1,8 +1,8 @@
 """
 Pins the one config combination that can only be a mistake: a Postgres
 DATABASE_URL (so, a deploy) with SESSION_HTTPS_ONLY unset. Nothing in the repo
-forces the flag on since render.yaml was removed, and a session cookie missing
-the Secure flag is invisible in an otherwise working app.
+forces the flag on — the deploy sets it by hand in env.json — and a session
+cookie missing the Secure flag is invisible in an otherwise working app.
 
 config.py reads the environment at import time, so these reload it under a
 patched environment rather than importing it fresh.

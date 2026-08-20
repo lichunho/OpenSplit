@@ -20,7 +20,7 @@ yourself by picking your name from a list.
 ```bash
 py -3.13 -m venv .venv && .venv/Scripts/activate
 pip install -r requirements.txt
-pytest                                   # 84 tests
+pytest                                   # 135 tests
 uvicorn app.main:app --reload            # http://127.0.0.1:8000
 docker compose up                        # same app on :8000
 ```

@@ -888,7 +888,7 @@ def test_dashboard_renders_for_a_group_with_no_expenses(client: TestClient):
 
 
 # ---------------------------------------------------------------------------
-# Settle-up flow (milestone 6). Every scenario below shares the same setup as
+# Settle-up flow. Every scenario below shares the same setup as
 # test_soft_delete_changes_balances_and_restore_returns_them_exactly:
 #   chris: paid 10000, owes 5333 -> balance  4667
 #   alex:  paid  4500, owes 4834 -> balance  -334
@@ -1155,7 +1155,7 @@ def test_settle_pick_lists_all_other_members_not_just_suggestions(client: TestCl
 
 
 # ---------------------------------------------------------------------------
-# CSV export (milestone 7).
+# CSV export.
 # ---------------------------------------------------------------------------
 
 
@@ -1283,7 +1283,7 @@ def test_csv_export_unidentified_visitor_redirects(client: TestClient):
 
 
 # ---------------------------------------------------------------------------
-# Mobile-first polish (milestone 8): graceful-degradation guarantees that
+# Mobile-first polish: graceful-degradation guarantees that
 # only a rendered-HTML check can catch — a future refactor could easily flip
 # these silently (e.g. un-hiding the copy button by default), which is
 # exactly the "dead button, no fallback" failure mode the plan calls out.

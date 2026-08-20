@@ -104,10 +104,11 @@
   updateHint();
 })();
 
-// Cold-start affordance: Render's free tier spins down after 15 min idle and
-// Neon after 5, so the first request to a sleeping app can take 60-90s. If a
-// form submit or an internal link click hasn't navigated away within ~2s,
-// say so instead of leaving what looks like a dead page. A warm response
+// Cold-start affordance: Neon autosuspends after 5 min idle and an idle Lambda
+// sandbox is torn down, so the first request after a quiet stretch pays to wake
+// both — a few seconds, and longer after a fresh deploy. If a form submit or
+// an internal link click hasn't navigated away within ~2s, say so instead of
+// leaving what looks like a dead page. A warm response
 // replaces the document before the timer ever fires, so this never shows up
 // on a fast server, and nothing here delays or blocks the navigation itself
 // (no preventDefault) — it's purely an indicator layered on top.

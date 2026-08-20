@@ -112,7 +112,9 @@ A better algorithm is not the fix. The optimal version of this problem is NP-com
 
 ### Cold starts are accepted, not engineered around
 
-On free hosting the first request to a sleeping app takes roughly 60–90 seconds. This is
+On free hosting the first request after a quiet stretch pays to wake both an idle Lambda
+sandbox and an autosuspended Neon database — measured at ~2.4 seconds, and ~13 seconds on
+the first request after a new image is deployed. This is
 **accepted** as the price of free hosting for a friend-group tool. The app's response is to
 say so — in the README, and in a "waking up" indicator — rather than to add a paid
 always-on tier or a keepalive pinger. A link that is slow once is fine. A link that looks

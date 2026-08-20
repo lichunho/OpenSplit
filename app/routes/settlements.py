@@ -178,9 +178,9 @@ async def create_settlement(slug: str, request: Request, result=Depends(require_
     session.commit()
 
     # Flash copy is carried as a query param on the redirect target, read by
-    # group_dashboard — no session/flash infra to touch (auth.py is out of
-    # scope for this milestone). It adapts to which side of the ledger "me"
-    # is on, since the payer is a dropdown and needn't be the current member.
+    # group_dashboard — no session/flash infra to touch. It adapts to which
+    # side of the ledger "me" is on, since the payer is a dropdown and needn't
+    # be the current member.
     amount_str = "{}{}".format(group.currency_symbol, format_cents(amount_cents))
     if payer.id == me.id:
         flash = "Recorded: you paid {} {}.".format(payee.name, amount_str)
