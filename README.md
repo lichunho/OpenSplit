@@ -20,7 +20,7 @@ yourself by picking your name from a list.
 ```bash
 py -3.13 -m venv .venv && .venv/Scripts/activate
 pip install -r requirements.txt
-pytest                                   # 75 tests
+pytest                                   # 84 tests
 uvicorn app.main:app --reload            # http://127.0.0.1:8000
 docker compose up                        # same app on :8000
 ```
@@ -67,10 +67,10 @@ preserving across a schema change.**
 ## Scope
 
 **In:** equal and exact splits, running balances, simplified debt suggestions, a recorded
-settlement flow, CSV export, soft delete with undo.
+settlement flow, expense editing, CSV export, soft delete with undo.
 
-**Deliberately out:** real payment rails, multi-currency, expense editing, member
-rename/delete, percentage or share splits, multi-payer expenses, notifications.
+**Deliberately out:** real payment rails, multi-currency, member rename/delete, percentage
+or share splits, multi-payer expenses, notifications.
 
 Each excluded feature is one fewer way for the balance arithmetic to stop being trustworthy
 — see [docs/concept.md](docs/concept.md).

@@ -40,6 +40,7 @@
                     <button type="submit" class="button-quiet">Restore</button>
                   </form>
                 {% else %}
+                  <a class="button-quiet" href="/g/{{ group.slug }}/expenses/{{ item.expense.id }}/edit">Edit</a>
                   <form method="post" action="/g/{{ group.slug }}/expenses/{{ item.expense.id }}/delete" class="inline">
                     <button type="submit" class="button-quiet">Delete</button>
                   </form>

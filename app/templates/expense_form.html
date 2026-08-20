@@ -1,14 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Add expense{% endblock %}
+{% block title %}{{ heading }}{% endblock %}
 {% block wrap_class %}wrap--medium{% endblock %}
 {% block content %}
   <a class="back-link" href="/g/{{ group.slug }}">&larr; {{ group.name }}</a>
-  <h1>Add expense</h1>
+  <h1>{{ heading }}</h1>
 
   <div class="card">
     {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
-    <form method="post" action="/g/{{ group.slug }}/expenses/new" id="expense-form">
+    {# Same id for both routes: app.js binds the equal/exact toggle and the
+       live "remaining" counter to #expense-form, so edit gets them for free. #}
+    <form method="post" action="{{ action }}" id="expense-form">
       <div class="form-cols">
         <div class="form-col">
           <label for="description">What was it?</label>
@@ -58,7 +60,7 @@
       </div>
 
       <div class="submit-bar">
-        <button type="submit">Save expense</button>
+        <button type="submit">{{ submit_label }}</button>
       </div>
     </form>
   </div>

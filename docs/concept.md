@@ -55,11 +55,15 @@ you don't fully trust — this is the wrong tool.
 - **CSV export.** So the data is yours and the ledger is auditable outside the app.
 - **Soft delete with undo.** Nothing is ever really deleted, because a mistyped expense is
   the most common error in an app like this.
+- **Expense editing.** The same form, reopened on an existing expense. An edit rewrites that
+  expense's stored shares in place and leaves no visible trace — no "edited" marker, no
+  history. Anyone with the link can change any expense, which is the same trade the access
+  model already makes everywhere else.
 
 ## What it deliberately does not do
 
-Real payment rails · multi-currency · expense editing · member rename or delete ·
-percentage or share splits · multi-payer expenses · notifications.
+Real payment rails · multi-currency · member rename or delete · percentage or share
+splits · multi-payer expenses · notifications.
 
 Each of these is a reasonable feature. Each also multiplies the number of states the
 balance math has to be correct in. The app's value is that its arithmetic is trustworthy;

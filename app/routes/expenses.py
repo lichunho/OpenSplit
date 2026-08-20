@@ -1,8 +1,11 @@
 """
-Add/soft-delete/restore expenses. Equal splits call money.py's split_equal;
+Add/edit/soft-delete/restore expenses. Equal splits call money.py's split_equal;
 exact splits call money.py's validate_exact. money.py is DB-free by design
 (see its module docstring), so the payer/participant group-membership check
 lives here, not there.
+
+The add and edit forms validate identically and render the same template, so
+both share _validated_expense and _render_form below.
 """
 import csv
 import io
@@ -73,6 +76,76 @@ def _parse_share_cents(raw: str) -> int:
     return cents
 
 
+def _validated_expense(form, member_ids: set[int]) -> tuple[str, int, str, int, dict[int, int]]:
+    """Validate the expense form — add and edit submit identical fields.
+    Returns (description, total_cents, split_type, payer_id, shares), or raises
+    ValueError with a message ready to show the member. Everything this calls
+    (parse_amount_cents, split_equal, validate_exact) already raises ValueError
+    the same way, so the caller catches one exception type for the lot."""
+    description = (form.get("description") or "").strip()
+    if not description:
+        raise ValueError("Enter a description.")
+
+    total_cents = parse_amount_cents(form.get("amount", ""))
+
+    split_type = form.get("split_type", "")
+    if split_type not in ("equal", "exact"):
+        raise ValueError("Choose a split type.")
+
+    participant_raw = form.getlist("participant_ids")
+    if not all(v.isdigit() for v in participant_raw):
+        raise ValueError("Invalid participant selected.")
+    participant_ids = [int(v) for v in participant_raw]
+    if not participant_ids:
+        raise ValueError("Select at least one participant.")
+    # split_equal raises on duplicates, but an exact split would silently
+    # collapse them into one share dict key, so reject for both split types.
+    if len(set(participant_ids)) != len(participant_ids):
+        raise ValueError("Duplicate participant selected.")
+
+    payer_raw = form.get("payer_id", "")
+    if not payer_raw.isdigit():
+        raise ValueError("Choose who paid.")
+    payer_id = int(payer_raw)
+
+    # The payer and every participant must belong to this group. money.py is
+    # DB-free by design (see its docstring) and does not do this check, so
+    # it's the route's job — a member id from another group must be rejected.
+    if payer_id not in member_ids or not set(participant_ids).issubset(member_ids):
+        raise ValueError("Choose a payer and participants from this group.")
+
+    if split_type == "equal":
+        shares = split_equal(total_cents, participant_ids)
+    else:
+        shares = {pid: _parse_share_cents(form.get(f"share_{pid}", "")) for pid in participant_ids}
+        validate_exact(total_cents, shares)
+
+    return description, total_cents, split_type, payer_id, shares
+
+
+def _submitted_values(form, members: list) -> dict:
+    """The field values as typed, echoed back into the template so a mistake in
+    one field doesn't wipe the whole form."""
+    return {
+        "description": form.get("description", ""),
+        "amount": form.get("amount", ""),
+        "split_type": form.get("split_type", "equal"),
+        "payer_id": form.get("payer_id", ""),
+        "selected_ids": {int(v) for v in form.getlist("participant_ids") if v.isdigit()},
+        "share_values": {m.id: form.get(f"share_{m.id}", "") for m in members},
+    }
+
+
+def _editable_expense(session: Session, group, expense_id: int) -> Expense | None:
+    """The expense both edit routes are allowed to touch: this group's, and not
+    soft-deleted — a deleted expense has to be restored before it can be
+    edited, so an edit can't quietly resurrect one."""
+    expense = session.get(Expense, expense_id)
+    if expense is None or expense.group_id != group.id or expense.deleted_at is not None:
+        return None
+    return expense
+
+
 @router.get("/g/{slug}/expenses/new")
 def new_expense_form(slug: str, request: Request, result=Depends(require_member), session: Session = Depends(get_session)):
     if is_redirect(result):
@@ -81,11 +154,13 @@ def new_expense_form(slug: str, request: Request, result=Depends(require_member)
     members = get_members(session, group.id)
     return templates.TemplateResponse(
         request,
-        "expense_new.html",
+        "expense_form.html",
         {
             "group": group,
             "members": members,
-            "me": me,
+            "action": f"/g/{slug}/expenses/new",
+            "heading": "Add expense",
+            "submit_label": "Save expense",
             "description": "",
             "amount": "",
             "split_type": "equal",
@@ -103,75 +178,27 @@ async def create_expense(slug: str, request: Request, result=Depends(require_mem
         return result
     group, me = result
     members = get_members(session, group.id)
-    member_ids = {m.id for m in members}
     form = await request.form()
 
-    def error(message: str):
-        # Re-render with everything the member already typed so a mistake in
-        # one field doesn't wipe the whole form.
-        selected_ids = {int(v) for v in form.getlist("participant_ids") if v.isdigit()}
-        share_values = {m.id: form.get(f"share_{m.id}", "") for m in members}
+    try:
+        description, total_cents, split_type, payer_id, shares = _validated_expense(
+            form, {m.id for m in members}
+        )
+    except ValueError as exc:
         return templates.TemplateResponse(
             request,
-            "expense_new.html",
+            "expense_form.html",
             {
                 "group": group,
                 "members": members,
-                "me": me,
-                "error": message,
-                "description": form.get("description", ""),
-                "amount": form.get("amount", ""),
-                "split_type": form.get("split_type", "equal"),
-                "payer_id": form.get("payer_id", ""),
-                "selected_ids": selected_ids,
-                "share_values": share_values,
+                "action": f"/g/{slug}/expenses/new",
+                "heading": "Add expense",
+                "submit_label": "Save expense",
+                "error": str(exc),
+                **_submitted_values(form, members),
             },
             status_code=400,
         )
-
-    description = (form.get("description") or "").strip()
-    if not description:
-        return error("Enter a description.")
-
-    try:
-        total_cents = parse_amount_cents(form.get("amount", ""))
-    except ValueError as exc:
-        return error(str(exc))
-
-    split_type = form.get("split_type", "")
-    if split_type not in ("equal", "exact"):
-        return error("Choose a split type.")
-
-    participant_raw = form.getlist("participant_ids")
-    if not all(v.isdigit() for v in participant_raw):
-        return error("Invalid participant selected.")
-    participant_ids = [int(v) for v in participant_raw]
-    if not participant_ids:
-        return error("Select at least one participant.")
-    # split_equal raises on duplicates, but an exact split would silently
-    # collapse them into one share dict key, so reject for both split types.
-    if len(set(participant_ids)) != len(participant_ids):
-        return error("Duplicate participant selected.")
-
-    payer_raw = form.get("payer_id", "")
-    if not payer_raw.isdigit():
-        return error("Choose who paid.")
-    payer_id = int(payer_raw)
-
-    # The payer and every participant must belong to this group. money.py is
-    # DB-free by design (see its docstring) and does not do this check, so
-    # it's the route's job — a member id from another group must be rejected.
-    if payer_id not in member_ids or not set(participant_ids).issubset(member_ids):
-        return error("Choose a payer and participants from this group.")
-
-    try:
-        if split_type == "equal":
-            shares = split_equal(total_cents, participant_ids)
-        else:
-            shares = {pid: _parse_share_cents(form.get(f"share_{pid}", "")) for pid in participant_ids}
-            validate_exact(total_cents, shares)
-    except ValueError as exc:
-        return error(str(exc))
 
     expense = Expense(
         group_id=group.id,
@@ -187,6 +214,92 @@ async def create_expense(slug: str, request: Request, result=Depends(require_mem
 
     # Shares are stored, not recomputed — a member joining mid-trip must not
     # silently rewrite the history of expenses they weren't part of.
+    for member_id, amount_cents in shares.items():
+        session.add(Share(expense_id=expense.id, member_id=member_id, amount_cents=amount_cents))
+    session.commit()
+
+    return RedirectResponse(url=f"/g/{slug}", status_code=303)
+
+
+@router.get("/g/{slug}/expenses/{expense_id}/edit")
+def edit_expense_form(slug: str, expense_id: int, request: Request, result=Depends(require_member), session: Session = Depends(get_session)):
+    if is_redirect(result):
+        return result
+    group, _me = result
+    expense = _editable_expense(session, group, expense_id)
+    if expense is None:
+        return RedirectResponse(url=f"/g/{slug}", status_code=303)
+
+    members = get_members(session, group.id)
+    stored_shares = session.exec(select(Share).where(Share.expense_id == expense.id)).all()
+    return templates.TemplateResponse(
+        request,
+        "expense_form.html",
+        {
+            "group": group,
+            "members": members,
+            "action": f"/g/{slug}/expenses/{expense.id}/edit",
+            "heading": "Edit expense",
+            "submit_label": "Save changes",
+            "description": expense.description,
+            "amount": format_cents(expense.amount_cents),
+            "split_type": expense.split_type,
+            # The template compares against `m.id|string`, so this has to be a
+            # string here even though it's an int on the model.
+            "payer_id": str(expense.payer_id),
+            "selected_ids": {s.member_id for s in stored_shares},
+            "share_values": {s.member_id: format_cents(s.amount_cents) for s in stored_shares},
+        },
+    )
+
+
+@router.post("/g/{slug}/expenses/{expense_id}/edit")
+async def update_expense(slug: str, expense_id: int, request: Request, result=Depends(require_member), session: Session = Depends(get_session)):
+    if is_redirect(result):
+        return result
+    group, _me = result
+    expense = _editable_expense(session, group, expense_id)
+    if expense is None:
+        return RedirectResponse(url=f"/g/{slug}", status_code=303)
+
+    members = get_members(session, group.id)
+    form = await request.form()
+
+    try:
+        description, total_cents, split_type, payer_id, shares = _validated_expense(
+            form, {m.id for m in members}
+        )
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request,
+            "expense_form.html",
+            {
+                "group": group,
+                "members": members,
+                "action": f"/g/{slug}/expenses/{expense.id}/edit",
+                "heading": "Edit expense",
+                "submit_label": "Save changes",
+                "error": str(exc),
+                **_submitted_values(form, members),
+            },
+            status_code=400,
+        )
+
+    expense.description = description
+    expense.amount_cents = total_cents
+    expense.payer_id = payer_id
+    expense.split_type = split_type
+    # created_at and created_by_id stay put: the feed is ordered by created_at,
+    # so editing an expense must not jump it to the top of the activity list.
+    session.add(expense)
+
+    # Rewriting this expense's shares does not break the "shares are stored,
+    # not recomputed" invariant — that rule stops the *roster* rewriting
+    # history on read. This is one member deliberately restating one expense.
+    for share in session.exec(select(Share).where(Share.expense_id == expense.id)).all():
+        session.delete(share)
+    session.commit()
+
     for member_id, amount_cents in shares.items():
         session.add(Share(expense_id=expense.id, member_id=member_id, amount_cents=amount_cents))
     session.commit()

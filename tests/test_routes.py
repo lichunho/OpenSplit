@@ -4,6 +4,8 @@ must never 500 (trap #2), duplicate names are rejected case-insensitively,
 an unidentified visitor is bounced to identify, and switch clears only the
 group it's called on.
 """
+import re
+
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
@@ -435,6 +437,261 @@ def test_payer_from_a_different_group_is_rejected(client: TestClient):
             select(Expense).where(Expense.group_id == group_a.id, Expense.description == "Sneaky")
         ).first()
     assert expense is None
+
+
+def _only_expense_id(slug: str) -> int:
+    with Session(engine) as session:
+        group = session.exec(select(Group).where(Group.slug == slug)).first()
+        return session.exec(select(Expense).where(Expense.group_id == group.id)).first().id
+
+
+def _shares_by_member(expense_id: int) -> dict[int, int]:
+    with Session(engine) as session:
+        rows = session.exec(select(Share).where(Share.expense_id == expense_id)).all()
+    # Built from a list, not a comprehension over the query, so a duplicated
+    # share row (the failure mode an edit could introduce) shows up as a length
+    # mismatch instead of being silently collapsed by the dict.
+    assert len(rows) == len({r.member_id for r in rows})
+    return {r.member_id: r.amount_cents for r in rows}
+
+
+def test_edit_expense_updates_amount_and_replaces_shares(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id, sam_id])
+    expense_id = _only_expense_id(slug)
+
+    response = client.post(
+        f"/g/{slug}/expenses/{expense_id}/edit",
+        data={
+            "description": "Dinner",
+            "amount": "60.00",
+            "payer_id": str(chris_id),
+            "split_type": "equal",
+            "participant_ids": [str(chris_id), str(alex_id), str(sam_id)],
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    with Session(engine) as session:
+        expense = session.get(Expense, expense_id)
+        assert expense.amount_cents == 6000
+        assert expense.description == "Dinner"
+
+    assert _shares_by_member(expense_id) == {chris_id: 2000, alex_id: 2000, sam_id: 2000}
+
+
+def test_edit_keeps_the_expenses_place_in_the_feed(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id])
+    expense_id = _only_expense_id(slug)
+    with Session(engine) as session:
+        created_at = session.get(Expense, expense_id).created_at
+
+    client.post(
+        f"/g/{slug}/expenses/{expense_id}/edit",
+        data={
+            "description": "Dinner and drinks",
+            "amount": "40.00",
+            "payer_id": str(chris_id),
+            "split_type": "equal",
+            "participant_ids": [str(chris_id), str(alex_id)],
+        },
+        follow_redirects=False,
+    )
+
+    with Session(engine) as session:
+        # created_at drives the activity feed's ordering, so an edit that
+        # touched it would jump the expense to the top of the list.
+        assert session.get(Expense, expense_id).created_at == created_at
+
+
+def test_edit_changing_payer_moves_the_balance(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id, sam_id])
+    expense_id = _only_expense_id(slug)
+    assert _balances(slug) == {chris_id: 2000, alex_id: -1000, sam_id: -1000}
+
+    client.post(
+        f"/g/{slug}/expenses/{expense_id}/edit",
+        data={
+            "description": "Dinner",
+            "amount": "30.00",
+            "payer_id": str(alex_id),
+            "split_type": "equal",
+            "participant_ids": [str(chris_id), str(alex_id), str(sam_id)],
+        },
+        follow_redirects=False,
+    )
+
+    assert _balances(slug) == {chris_id: -1000, alex_id: 2000, sam_id: -1000}
+
+
+def test_edit_from_equal_to_exact_replaces_shares(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id, sam_id])
+    expense_id = _only_expense_id(slug)
+
+    response = client.post(
+        f"/g/{slug}/expenses/{expense_id}/edit",
+        data={
+            "description": "Dinner",
+            "amount": "30.00",
+            "payer_id": str(chris_id),
+            "split_type": "exact",
+            "participant_ids": [str(chris_id), str(alex_id), str(sam_id)],
+            f"share_{chris_id}": "15.00",
+            f"share_{alex_id}": "10.00",
+            f"share_{sam_id}": "5.00",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    with Session(engine) as session:
+        assert session.get(Expense, expense_id).split_type == "exact"
+    assert _shares_by_member(expense_id) == {chris_id: 1500, alex_id: 1000, sam_id: 500}
+
+
+def test_edit_dropping_a_participant_removes_their_share(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id, sam_id])
+    expense_id = _only_expense_id(slug)
+
+    client.post(
+        f"/g/{slug}/expenses/{expense_id}/edit",
+        data={
+            "description": "Dinner",
+            "amount": "30.00",
+            "payer_id": str(chris_id),
+            "split_type": "equal",
+            "participant_ids": [str(chris_id), str(alex_id)],
+        },
+        follow_redirects=False,
+    )
+
+    # Sam's row must be gone, not left behind at its old amount.
+    assert _shares_by_member(expense_id) == {chris_id: 1500, alex_id: 1500}
+    assert _balances(slug) == {chris_id: 1500, alex_id: -1500}
+
+
+def test_edit_invalid_amount_rerenders_400_and_leaves_expense_unchanged(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id, sam_id])
+    expense_id = _only_expense_id(slug)
+
+    response = client.post(
+        f"/g/{slug}/expenses/{expense_id}/edit",
+        data={
+            "description": "Dinner",
+            "amount": "abc",
+            "payer_id": str(chris_id),
+            "split_type": "equal",
+            "participant_ids": [str(chris_id), str(alex_id), str(sam_id)],
+        },
+    )
+    assert response.status_code == 400
+    assert "Enter a valid amount." in response.text
+    # The form comes back still filled in, posting to the edit route.
+    assert f"/g/{slug}/expenses/{expense_id}/edit" in response.text
+    assert 'value="abc"' in response.text
+
+    with Session(engine) as session:
+        assert session.get(Expense, expense_id).amount_cents == 3000
+    assert _shares_by_member(expense_id) == {chris_id: 1000, alex_id: 1000, sam_id: 1000}
+
+
+def test_edit_expense_from_another_group_is_rejected(client: TestClient):
+    slug_a = _create_group(client, "Group A")
+    slug_b = _create_group(client, "Group B")
+    chris_id, alex_id, _sam_id = _create_trio(client, slug_a)
+    _add_expense(client, slug_a, "Dinner", "30.00", chris_id, [chris_id, alex_id])
+    expense_id = _only_expense_id(slug_a)
+
+    other_browser = TestClient(client.app)
+    other_browser.post(f"/g/{slug_b}/identify", data={"new_name": "Intruder"}, follow_redirects=False)
+    intruder_id = _member_id(slug_b, "Intruder")
+
+    response = other_browser.post(
+        f"/g/{slug_b}/expenses/{expense_id}/edit",
+        data={
+            "description": "Hijacked",
+            "amount": "999.00",
+            "payer_id": str(intruder_id),
+            "split_type": "equal",
+            "participant_ids": [str(intruder_id)],
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    with Session(engine) as session:
+        expense = session.get(Expense, expense_id)
+        assert expense.description == "Dinner"
+        assert expense.amount_cents == 3000
+
+
+def test_edit_of_a_deleted_expense_is_refused_until_it_is_restored(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, _sam_id = _create_trio(client, slug)
+    _add_expense(client, slug, "Dinner", "30.00", chris_id, [chris_id, alex_id])
+    expense_id = _only_expense_id(slug)
+    client.post(f"/g/{slug}/expenses/{expense_id}/delete", follow_redirects=False)
+
+    edit_data = {
+        "description": "Resurrected",
+        "amount": "99.00",
+        "payer_id": str(chris_id),
+        "split_type": "equal",
+        "participant_ids": [str(chris_id), str(alex_id)],
+    }
+    assert client.get(f"/g/{slug}/expenses/{expense_id}/edit", follow_redirects=False).status_code == 303
+    assert client.post(
+        f"/g/{slug}/expenses/{expense_id}/edit", data=edit_data, follow_redirects=False
+    ).status_code == 303
+
+    with Session(engine) as session:
+        expense = session.get(Expense, expense_id)
+        assert expense.description == "Dinner"
+        assert expense.deleted_at is not None
+
+    # Restore first, and the same edit goes through.
+    client.post(f"/g/{slug}/expenses/{expense_id}/restore", follow_redirects=False)
+    assert client.post(
+        f"/g/{slug}/expenses/{expense_id}/edit", data=edit_data, follow_redirects=False
+    ).status_code == 303
+    with Session(engine) as session:
+        assert session.get(Expense, expense_id).description == "Resurrected"
+
+
+def test_edit_form_prefills_the_stored_values(client: TestClient):
+    slug = _create_group(client)
+    chris_id, alex_id, sam_id = _create_trio(client, slug)
+    # Sam is deliberately left out, so his checkbox must come back unchecked.
+    _add_expense(client, slug, "Dinner", "20.00", alex_id, [chris_id, alex_id])
+    expense_id = _only_expense_id(slug)
+
+    response = client.get(f"/g/{slug}/expenses/{expense_id}/edit")
+    assert response.status_code == 200
+    assert 'value="Dinner"' in response.text
+    assert 'value="20.00"' in response.text
+    assert f'<option value="{alex_id}" selected>' in response.text
+
+    checked = {
+        member_id: "checked" in tag
+        for member_id, tag in re.findall(
+            r'<input type="checkbox" name="participant_ids" value="(\d+)"(.*?)>',
+            response.text,
+            re.DOTALL,
+        )
+    }
+    assert checked == {str(chris_id): True, str(alex_id): True, str(sam_id): False}
 
 
 def _add_expense(

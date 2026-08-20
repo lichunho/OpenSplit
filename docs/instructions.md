@@ -34,7 +34,7 @@ the project root, and `SECRET_KEY` falls back to a key generated at startup.
 ## Testing
 
 ```bash
-pytest                                   # all 75 tests
+pytest                                   # all 84 tests
 pytest tests/test_money.py               # the money core only — fast, no DB
 pytest tests/test_money.py::test_name    # a single test
 pytest -q -W default                     # surface warnings
@@ -130,8 +130,11 @@ since one browser holds one identity per group.
    erroring.
 9. Delete that settlement, then soft-delete and restore the taxi expense → balances return
    exactly.
-10. `export.csv` opens in a spreadsheet and reconciles with the dashboard.
-11. **The test only production can run:** idle for 20 minutes, come back, and confirm the app
+10. Edit the dinner to $60 → it stays **in the same place in the feed** (editing does not
+    touch `created_at`), balances follow, and the expense still has exactly three share
+    rows. Soft-delete it → the Edit control disappears until it is restored.
+11. `export.csv` opens in a spreadsheet and reconciles with the dashboard.
+12. **The test only production can run:** idle for 20 minutes, come back, and confirm the app
     is *slow but does not 500*. That is the Neon-suspend trap proving fixed, and no local
     test can substitute for it.
 

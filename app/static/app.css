@@ -316,6 +316,20 @@ button:active {
   flex-shrink: 0;
 }
 
+/* The feed's Edit control is a link, not a button, so it misses the shared
+   `button` rule above — restate the few properties that come from there. */
+a.button-quiet {
+  display: inline-flex;
+  align-items: center;
+  /* `border-color` comes from .button-quiet; an <a> has no width/style of its
+     own, and the initial `medium` width would render a 3px box. */
+  border-width: 1px;
+  border-style: solid;
+  border-radius: var(--r-sm);
+  text-decoration: none;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
 .button-quiet:active {
   background: var(--border);
   color: var(--text);

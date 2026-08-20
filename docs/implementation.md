@@ -35,9 +35,9 @@ app/
   auth.py        session helpers, scrypt hash/verify, require_member
   queries.py     read-side queries + cents formatting shared by more than one route
   routes/        groups.py, expenses.py, settlements.py
-  templates/     base, index, identify, group, expense_new, settle_pick, settle_confirm
+  templates/     base, index, identify, group, expense_form, settle_pick, settle_confirm
   static/        app.css, app.js, robots.txt
-tests/           test_money.py (28), test_routes.py (41), test_db.py (6)
+tests/           test_money.py (28), test_routes.py (50), test_db.py (6)
 ```
 
 Rules that span files:
@@ -137,6 +137,7 @@ it to `Decimal`.
 | POST | `/g/{slug}/switch` | Forget identity for this group ("not you?") |
 | POST | `/g/{slug}/members` | Add a member by name |
 | GET/POST | `/g/{slug}/expenses/new` | Expense form / create |
+| GET/POST | `/g/{slug}/expenses/{id}/edit` | Same form, prefilled / update in place |
 | POST | `/g/{slug}/expenses/{id}/delete` · `/restore` | Soft delete / undo |
 | GET | `/g/{slug}/settle` | Step 1 — who are you paying |
 | GET | `/g/{slug}/settle/{member_id}` | Step 2 — confirm amount |
@@ -241,7 +242,7 @@ moment there is data worth preserving.**
 
 ## Testing
 
-75 tests: **28** on the money core, **41** on routes, **6** on engine configuration.
+84 tests: **28** on the money core, **50** on routes, **6** on engine configuration.
 
 The split is deliberate. `test_money.py` hits the pure functions directly — that's where
 the real bugs are, and those tests need no database, no HTTP, and no fixtures.

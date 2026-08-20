@@ -49,7 +49,7 @@ Full design rationale lives in the implementation plan at `~/.claude/plans/the-g
 
 ## Current state
 
-**All nine milestones of the implementation plan are built and committed** on the `build/v1` branch, with 75 tests passing. Not yet done: the plan's *deployed* verification — pushing to GitHub, wiring Render + Neon, and the 20-minute-idle test that is the only real proof trap #1 is fixed. `docker compose up` is also written but has never been executed (no Docker daemon was running).
+**All nine milestones of the implementation plan are built and committed** on the `build/v1` branch, with 84 tests passing. Not yet done: the plan's *deployed* verification — pushing to GitHub, wiring Render + Neon, and the 20-minute-idle test that is the only real proof trap #1 is fixed. `docker compose up` is also written but has never been executed (no Docker daemon was running).
 
 ## Stack
 
@@ -89,7 +89,7 @@ app/
   auth.py       session helpers, scrypt hash/verify, require_member
   queries.py    read-side queries/formatting shared by more than one route
   routes/       groups.py, expenses.py, settlements.py
-  templates/    base, index, identify, group, expense_new, settle_pick, settle_confirm
+  templates/    base, index, identify, group, expense_form, settle_pick, settle_confirm
   static/       app.css, app.js, robots.txt
 tests/          test_money.py, test_routes.py
 ```
@@ -115,9 +115,9 @@ These fail *only* on the deployed free tier — a green local `pytest` proves no
 
 ## Scope
 
-In: equal and exact splits, balances, simplified debts, recorded settlements, CSV export, soft delete.
+In: equal and exact splits, balances, simplified debts, recorded settlements, expense editing, CSV export, soft delete.
 
-Deliberately out: real payment rails, multi-currency, expense editing, member rename/delete, percentage or share splits, multi-payer expenses, notifications. Free-tier cold start is accepted, not engineered around.
+Deliberately out: real payment rails, multi-currency, member rename/delete, percentage or share splits, multi-payer expenses, notifications. Free-tier cold start is accepted, not engineered around.
 
 Simplified debt suggestions are **unstable by nature** — simplification never changes anyone's net balance, only payment paths, so "pay Alex $30" can legitimately become "pay Sam $30" tomorrow. Deterministic tie-breaks and a visible manual-payee option are the fix; a better algorithm is not (optimal is NP-complete).
 
