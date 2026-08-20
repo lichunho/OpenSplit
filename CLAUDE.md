@@ -26,7 +26,8 @@ A "generation" here is **the database schema and its contents**. v1 uses `create
 ## Documentation
 Read the project's docs at session start. Update the relevant doc when a feature is added/changed or a file path moves. Skip doc updates for bug fixes and refactors that don't move files.
 
-[README.md](README.md) is the docs entry point and must keep stating the cold-start behaviour (60–90s on a free-tier link) and the `create_all`/no-migrations decision, so both read as choices rather than bugs. It links to three docs, each with one job — match the change to the doc:
+[README.md](README.md) is the docs entry point and must keep stating the cold-start behaviour (a few seconds on a free-tier link, longer
+after a fresh deploy) and the `create_all`/no-migrations decision, so both read as choices rather than bugs. It links to three docs, each with one job — match the change to the doc:
 
 - [docs/concept.md](docs/concept.md) — what the app is and why; the access model, the trades, scope in/out. Update when a *decision* changes.
 - [docs/implementation.md](docs/implementation.md) — stack, module map, data model, core arithmetic, the three traps. Update when *structure* changes.
@@ -49,7 +50,7 @@ Full design rationale lives in the implementation plan at `~/.claude/plans/the-g
 
 ## Current state
 
-**All nine milestones of the implementation plan are built and committed** on the `build/v1` branch, with 133 tests passing. Not yet done: the plan's *deployed* verification — pushing to GitHub, wiring Render + Neon, and the 20-minute-idle test that is the only real proof trap #1 is fixed. `docker compose up` is also written but has never been executed (no Docker daemon was running).
+**All nine milestones of the implementation plan are built and committed** on the `build/v1` branch, with 133 tests passing. The app is deployed to AWS Lambda behind a Function URL with Neon Postgres, and cold starts have been measured there (~2.4s warm-image cold start; ~13s on the first request after a new image). Render was evaluated and retired; `render.yaml` is gone, and its history is the only place that deploy path still exists. Still not confirmed: the 20-minute-idle test that is the only real proof trap #1 is fixed.
 
 ## Stack
 
@@ -63,7 +64,7 @@ Node/npm are **not installed** on this machine; Python 3 and Docker are. The sta
 | Sessions | Starlette `SessionMiddleware`, signed cookie |
 | Passwords | `hashlib.scrypt`, N=2¹⁴ r=8 p=1 |
 | Migrations | `create_all` for v1, Alembic deferred |
-| Hosting | Render free web service + Neon free Postgres |
+| Hosting | AWS Lambda behind a Function URL + Neon free Postgres |
 | JS | ~40 lines of vanilla JS on the expense form |
 
 ## Commands
@@ -111,7 +112,7 @@ Invariants that span files:
 
 These fail *only* on the deployed free tier — a green local `pytest` proves nothing about them. They are why `db.py` and `auth.py` deserve care disproportionate to their size.
 
-1. **Neon autosuspends at 5 min, Render spins down at 15.** In that gap a live process holds pooled connections to a sleeping database and the next request dies with `SSL SYSCALL error: EOF detected` — a 500, unreproducible on local SQLite. `db.py` must use Neon's **pooled** host (`-pooler`), set **`poolclass=NullPool`** for Postgres, pin **SQLAlchemy ≥ 2.0.33**, normalise `postgres://` → `postgresql+psycopg://` in exactly one place, and on the SQLite branch set `check_same_thread=False` plus WAL.
+1. **Neon autosuspends at 5 min, and an idle Lambda sandbox is torn down.** In that gap a live process holds pooled connections to a sleeping database and the next request dies with `SSL SYSCALL error: EOF detected` — a 500, unreproducible on local SQLite. `db.py` must use Neon's **pooled** host (`-pooler`), set **`poolclass=NullPool`** for Postgres, pin **SQLAlchemy ≥ 2.0.33**, normalise `postgres://` → `postgresql+psycopg://` in exactly one place, and on the SQLite branch set `check_same_thread=False` plus WAL.
 2. **`hashlib.scrypt` raises `ValueError` at OWASP's recommended parameters.** CPython defaults `maxmem=0`, which OpenSSL caps at 32 MiB; `128·N·r` means N=2¹⁵ r=8 hits the cap and throws — ships green, dies on first login. Use **N=16384 (2¹⁴), r=8, p=1**, a 16-byte `secrets.token_bytes` salt, `hmac.compare_digest` to verify, and store a self-describing `scrypt$N$r$p$salt$hash` so the cost can be raised later without a migration.
 3. **`create_all` silently no-ops on schema changes** — add a column post-launch and every page 500s. See the versioning section above.
 

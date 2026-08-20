@@ -41,18 +41,15 @@ crawling. The reasoning is in [docs/concept.md](docs/concept.md).
 
 ## Two things that look like bugs and aren't
 
-**Cold start: expect 60–90 seconds on the first request after idle** on the Render
-deployment. Render's free web service spins down after 15 minutes with no traffic, and
-Neon's free Postgres autosuspends after 5. When both are asleep, the request that wakes them
-pays for a Render cold boot plus a Neon resume. If a friend opens the link and the page hangs
-for a minute, that's this — not the app being broken. Accepted as the price of free hosting
-rather than engineered around.
-
-The AWS Lambda deployment described in [docs/instructions.md](docs/instructions.md#option-b-aws-lambda)
-has the same shape but a much shorter wait — measured at ~2.4 seconds with both the Lambda
-sandbox and Neon cold, since only those two have to wake, not a whole web service. It is
-still a cold start, not an always-on server. The very first request after a new image is
-deployed is slower (~13s), because it also pulls the image and runs `create_all`.
+**Cold start: expect a few seconds on the first request after idle.** Neon's free Postgres
+autosuspends after 5 minutes with no traffic, and an idle Lambda sandbox is torn down too, so
+the request that arrives after a quiet stretch pays to wake both — measured at ~2.4 seconds
+with the sandbox and Neon cold, against ~260ms warm. The first request after a new image is
+deployed is slower still (~13s), because it also pulls the image and runs `create_all`. If a
+friend opens the link and the page pauses, that's this — not the app being broken. It is a
+cold start, not an always-on server: accepted as the price of free hosting rather than
+engineered around. The deployment is described in
+[docs/instructions.md](docs/instructions.md#deploying).
 
 **Simplified debt suggestions shift between days.** Simplifying balances never changes
 anyone's net position, only which payment paths clear it — so "pay Alex $30" can
