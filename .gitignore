@@ -21,3 +21,7 @@ __pycache__/
 .neon
 .agents/
 skills-lock.json
+
+# Hand-written deploy inputs (env.json embeds the Neon password)
+env.json
+policy.json
