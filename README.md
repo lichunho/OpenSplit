@@ -9,16 +9,21 @@ yourself by picking your name from a list.
 
 ## Documentation
 
+Start at [documentation/README.md](documentation/README.md), the index. The main docs:
+
 | Doc | What's in it |
 |---|---|
-| [docs/concept.md](docs/concept.md) | What the app is, the access model, the trades it makes, what's deliberately out of scope |
-| [docs/implementation.md](docs/implementation.md) | Stack, module map, data model, the core arithmetic, the three production-only traps |
-| [docs/instructions.md](docs/instructions.md) | Setup, running, testing, configuration, deploying, verification checklist, troubleshooting |
+| [concept.md](documentation/concept.md) | What the app is, the access model, the trades it makes, what's deliberately out of scope |
+| [architecture.md](documentation/architecture.md) | Stack, module rules, data model, the core arithmetic, the three production-only traps |
+| [commands.md](documentation/commands.md) | Setup, running, testing, Docker |
+| [deployment.md](documentation/deployment.md) | Deploying, verification checklist, troubleshooting |
+| [conventions.md](documentation/conventions.md) | How to contribute |
 
 ## Quick start
 
 ```bash
-py -3.13 -m venv .venv && .venv/Scripts/activate
+python3.13 -m venv .venv && source .venv/bin/activate   # macOS / Linux
+# py -3.13 -m venv .venv && .venv/Scripts/activate      # Windows
 pip install -r requirements.txt
 pytest                                   # 135 tests
 uvicorn app.main:app --reload            # http://127.0.0.1:8000
@@ -27,7 +32,8 @@ docker compose up                        # same app on :8000
 
 No configuration is needed to start — `DATABASE_URL` falls back to a local SQLite file and
 `SECRET_KEY` to a generated dev key. Full details in
-[docs/instructions.md](docs/instructions.md).
+[documentation/commands.md](documentation/commands.md) and
+[documentation/config.md](documentation/config.md).
 
 ## The link is the credential
 
@@ -37,7 +43,7 @@ stops someone else from acting *as you* — it is not a barrier to the group its
 
 This is a deliberate trade, not an oversight: it's the same model when2meet uses, and it's
 why the slug is unguessable and [`robots.txt`](app/static/robots.txt) disallows all
-crawling. The reasoning is in [docs/concept.md](docs/concept.md).
+crawling. The reasoning is in [documentation/concept.md](documentation/concept.md).
 
 ## Two things that look like bugs and aren't
 
@@ -49,7 +55,7 @@ deployed is slower still (~13s), because it also pulls the image and runs `creat
 friend opens the link and the page pauses, that's this — not the app being broken. It is a
 cold start, not an always-on server: accepted as the price of free hosting rather than
 engineered around. The deployment is described in
-[docs/instructions.md](docs/instructions.md#deploying).
+[documentation/deployment.md](documentation/deployment.md#deploying).
 
 **Simplified debt suggestions shift between days.** Simplifying balances never changes
 anyone's net position, only which payment paths clear it — so "pay Alex $30" can
@@ -65,7 +71,9 @@ every page that touches it 500s, with no error at deploy time.
 This is a deliberate choice for now. Before there's real group data worth keeping, a schema
 change just means dumping the database to `archive/YYYY-MM-DD_<short-description>/`
 (gitignored — it would hold real member names and spending history) and dropping/recreating
-the Neon branch. **Alembic becomes the next milestone the moment there's data worth
+the Neon branch; a nullable column can be added in place instead — see
+[documentation/data-and-artifacts.md](documentation/data-and-artifacts.md#schema-changes).
+**Alembic becomes the next milestone the moment there's data worth
 preserving across a schema change.**
 
 ## Scope
@@ -77,4 +85,4 @@ settlement flow, expense editing, CSV export and import, soft delete with undo.
 or share splits, multi-payer expenses, notifications.
 
 Each excluded feature is one fewer way for the balance arithmetic to stop being trustworthy
-— see [docs/concept.md](docs/concept.md).
+— see [documentation/concept.md](documentation/concept.md).

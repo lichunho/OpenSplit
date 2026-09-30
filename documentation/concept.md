@@ -137,7 +137,39 @@ read would do exactly that.
 **Deletes are soft.** Balance queries filter deleted rows; the activity feed still shows
 them, struck through, with an undo control.
 
+## Using the app
+
+1. **Create a group** from the landing page.
+2. **Share the link.** Use the copy button on the group page. Remember: anyone with the link
+   can view the group and add expenses — see [the access model](#the-access-model-the-link-is-the-credential).
+3. **Everyone picks their name** the first time they open it. Setting a password is optional
+   and only stops someone else acting as you.
+4. **Add expenses** as they happen. Equal is the default; switch to exact when the split
+   isn't even.
+5. **Categorise them** with the optional Category dropdown. It lists the categories this
+   group already uses — a new group has none — plus **Custom…**, which asks for a name and
+   adds it to the list for this group only. Casing is matched for you, so entering "food"
+   joins the existing "Food" rather than starting a second one.
+6. **Filter the feed** with the tabs above the activity list: one per category in use, plus
+   All and Uncategorized, each with a total. The tabs are ordinary links, so they're
+   bookmarkable and survive a refresh. **Balances and suggested settlements always show the
+   whole group** — filtering never changes what anyone owes.
+7. **Settle up** when you're squaring away. The app suggests who to pay, but paying anyone
+   directly is fine — balances net out the same either way.
+8. **Export to CSV** any time. The Expenses section carries a Category column.
+9. **Import a CSV** from the same link on the group page. Upload a file shaped like the
+   export — an **Expenses** section and, optionally, a **Settlements** one, each with its own
+   header row. Columns are matched **by name**, so their order doesn't matter and extra
+   columns are ignored; a file exported by an older version still imports. Anyone named in
+   the file who isn't in the group yet is added to the roster. You get a preview of
+   everything that will be created, including new members, before anything is saved.
+   Importing **adds** — it never changes or removes what's already there, so importing the
+   same file twice gives you two copies of it.
+
+Mistyped something? Everything is soft-deleted, so **delete and restore both work** on
+expenses and settlements.
+
 ---
 
-See [implementation.md](implementation.md) for how this is built, and
-[instructions.md](instructions.md) for how to run and deploy it.
+See [architecture.md](architecture.md) for how this is built, and
+[commands.md](commands.md) and [deployment.md](deployment.md) for how to run and deploy it.

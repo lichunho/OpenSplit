@@ -1,4 +1,4 @@
-# Implementation
+# Architecture
 
 How the app is built: stack, module layout, data model, and the decisions that are
 load-bearing.
@@ -15,7 +15,7 @@ load-bearing.
 | Migrations | `create_all` (Alembic deferred) | See trap #3 below |
 | Hosting | AWS Lambda behind a Function URL + Neon free Postgres | Lambda runs the container image unmodified via the Web Adapter, inside the permanently free tier at this scale; ~2.4s cold start. Neon's free tier persists rather than expiring after 30 days |
 | CSS | One token-driven stylesheet, dark mode via `prefers-color-scheme` | No build step; see the UI layer section |
-| JS | ~150 lines of vanilla JS | Expense-form toggle, settle hint, copy-link, cold-start indicator |
+| JS | ~170 lines of vanilla JS | Expense-form toggle, settle hint, copy-link, cold-start indicator |
 
 The whole stack follows from one environment fact: **Node/npm are not installed** on the
 development machine. So: no frontend build step, no bundler, no CDN. Everything is served
@@ -23,30 +23,13 @@ from `app/static/` and works with no network beyond the app itself.
 
 ## Module map
 
-Each module has one job.
-
-```
-app/
-  main.py        FastAPI app, middleware, static mount, router registration — no business logic
-  config.py      every os.environ read in the codebase lives here
-  db.py          engine + session dependency, URL normalisation, pool config
-  models.py      SQLModel tables
-  money.py       PURE functions: parse_amount_cents, split_equal, validate_exact, net_balances, simplify
-  auth.py        session helpers, scrypt hash/verify, require_member
-  queries.py     read-side queries + cents formatting shared by more than one route
-  csv_import.py  PURE: exported CSV text -> an ImportPlan of rows to create
-  routes/        groups.py, expenses.py, settlements.py, imports.py
-  templates/     base, index, identify, group, expense_form, settle_pick, settle_confirm,
-                 import_form, import_preview
-  static/        app.css, app.js, robots.txt
-tests/           test_money.py (28), test_routes.py (82), test_csv_import.py (17), test_db.py (6),
-                 test_config.py (2)
-```
+Each module has one job. File-by-file layout is in [directory-map.md](directory-map.md).
 
 Rules that span files:
 
 - **`config.py` owns every `os.environ` read.** `db.py` imports `DATABASE_URL` from it;
-  `auth.py` imports `SECRET_KEY`. Neither touches the environment directly. This keeps
+  `main.py` imports `SECRET_KEY` for `SessionMiddleware`. Neither touches the environment
+  directly. This keeps
   configuration auditable in one place instead of scattered across modules. Owning both
   values is also what lets it refuse to start on a Postgres `DATABASE_URL` with
   `SESSION_HTTPS_ONLY` unset — a deploy whose session cookie would ship without `Secure`.
@@ -326,8 +309,9 @@ Add a column post-launch and every page touching it 500s, with no error at deplo
 
 This is an accepted v1 trade. Before there is real data, a schema change means dumping the
 database to `archive/YYYY-MM-DD_<description>/` (gitignored — it holds real names and
-spending history) and recreating the Neon branch. **Alembic becomes the next milestone the
-moment there is data worth preserving.**
+spending history) and recreating the Neon branch. A nullable column can instead be added in
+place — see [Schema changes](data-and-artifacts.md#schema-changes). **Alembic becomes the
+next milestone the moment there is data worth preserving.**
 
 ## Testing
 
@@ -344,5 +328,5 @@ developer's real database.
 
 ---
 
-See [concept.md](concept.md) for why the app is shaped this way, and
-[instructions.md](instructions.md) for setup and deployment.
+See [concept.md](concept.md) for why the app is shaped this way,
+[commands.md](commands.md) for setup, and [deployment.md](deployment.md) for deployment.
