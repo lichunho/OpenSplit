@@ -35,7 +35,7 @@ the project root, and `SECRET_KEY` falls back to a key generated at startup.
 ## Testing
 
 ```bash
-pytest                                   # all 135 tests
+pytest                                   # all 136 tests
 pytest tests/test_money.py               # the money core only — fast, no DB
 pytest tests/test_money.py::test_name    # a single test
 pytest -q -W default                     # surface warnings

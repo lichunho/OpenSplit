@@ -1,6 +1,6 @@
 """
-Pins the one config combination that can only be a mistake: a Postgres
-DATABASE_URL (so, a deploy) with SESSION_HTTPS_ONLY unset. Nothing in the repo
+Pins the config combinations that can only be a mistake: a Postgres
+DATABASE_URL (so, a deploy) with SESSION_HTTPS_ONLY or SECRET_KEY unset. Nothing in the repo
 forces the flag on — the deploy sets it by hand in env.json — and a session
 cookie missing the Secure flag is invisible in an otherwise working app.
 
@@ -36,3 +36,11 @@ def test_postgres_with_https_only_starts(monkeypatch):
     monkeypatch.setenv("SESSION_HTTPS_ONLY", "true")
     importlib.reload(app.config)
     assert app.config.SESSION_HTTPS_ONLY is True
+
+
+def test_postgres_without_secret_key_refuses_to_start(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", NEON)
+    monkeypatch.setenv("SESSION_HTTPS_ONLY", "true")
+    monkeypatch.setenv("SECRET_KEY", "")
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):
+        importlib.reload(app.config)

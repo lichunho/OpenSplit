@@ -315,8 +315,8 @@ next milestone the moment there is data worth preserving.**
 
 ## Testing
 
-135 tests: **28** on the money core, **82** on routes, **17** on the CSV parser, **6** on
-engine configuration, and **2** on the refuse-to-start config guard.
+136 tests: **28** on the money core, **82** on routes, **17** on the CSV parser, **6** on
+engine configuration, and **3** on the refuse-to-start config guards.
 
 The split is deliberate. `test_money.py` hits the pure functions directly — that's where
 the real bugs are, and those tests need no database, no HTTP, and no fixtures.

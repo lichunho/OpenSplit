@@ -25,7 +25,7 @@ Start at [documentation/README.md](documentation/README.md), the index. The main
 python3.13 -m venv .venv && source .venv/bin/activate   # macOS / Linux
 # py -3.13 -m venv .venv && .venv/Scripts/activate      # Windows
 pip install -r requirements.txt
-pytest                                   # 135 tests
+pytest                                   # 136 tests
 uvicorn app.main:app --reload            # http://127.0.0.1:8000
 docker compose up                        # same app on :8000
 ```

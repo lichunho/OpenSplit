@@ -3,7 +3,7 @@
 OpenSplit is an open-source Splitwise clone for splitting shared expenses within a friend
 group. It has no accounts: a group lives at a secret link, and you pick your name from a list.
 It is built with FastAPI and Jinja2 on SQLite locally and Neon Postgres in production, and is
-deployed to AWS Lambda behind a Function URL. v1 is feature-complete, with 135 tests.
+deployed to AWS Lambda behind a Function URL. v1 is feature-complete, with 136 tests.
 
 ## Docs
 

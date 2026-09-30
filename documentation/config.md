@@ -19,8 +19,8 @@ read in the codebase. It also defines the paths: `BASE_DIR` (`app/`), `TEMPLATES
    override** variables already in the environment, so the deployed function's environment
    always beats a stray local file.
 2. Each value is read from the environment, with the defaults below.
-3. If `DATABASE_URL` starts with `postgres` and `SESSION_HTTPS_ONLY` is not `true`, import
-   raises `RuntimeError`.
+3. If `DATABASE_URL` starts with `postgres` and `SESSION_HTTPS_ONLY` is not `true`, or
+   `SECRET_KEY` is unset or empty, import raises `RuntimeError`.
 
 Values are read once at import. `db.py` builds its engine at import time too, which is why
 `tests/conftest.py` sets `DATABASE_URL` (a temp SQLite file), `SECRET_KEY` and
@@ -34,7 +34,7 @@ local development.
 | Variable | Default | Notes |
 |---|---|---|
 | `DATABASE_URL` | `sqlite:///<repo>/app.db` | In production, Neon's **pooled** connection string — the hostname must contain `-pooler` |
-| `SECRET_KEY` | generated at startup | Set a fixed value to keep sessions across restarts |
+| `SECRET_KEY` | generated at startup | Set a fixed value to keep sessions across restarts. Required with Postgres |
 | `SESSION_HTTPS_ONLY` | `false` | Must be `true` in production. See below |
 
 **On `SESSION_HTTPS_ONLY`:** a `Secure` cookie is not sent by browsers over plain `http://`,
@@ -45,6 +45,11 @@ Forgetting it on a redeploy would ship the session cookie without the `Secure` f
 app that otherwise looks fine, so `config.py` refuses to start when `DATABASE_URL` points at
 Postgres and this is not `true`. If a deploy dies at import with that `RuntimeError`, this is
 the fix — set the variable rather than removing the check.
+
+**On `SECRET_KEY`:** the generated fallback is per process, so on Lambda every instance
+would sign cookies with a different key and users would be signed out at random. For the
+same reason, `config.py` refuses to start on a Postgres URL when `SECRET_KEY` is unset or
+empty.
 
 Real secrets never belong in the repo. `.env`, `*.db`, `.venv/`, `export.csv` and
 `archive/` are all gitignored.
@@ -57,7 +62,7 @@ These are deploy-time settings, not app reads, so they live beside the thing the
 |---|---|---|
 | `Dockerfile` | `AWS_LWA_PORT`, `AWS_LWA_READINESS_CHECK_PATH`, `AWS_LWA_ASYNC_INIT` | `8000`, `/healthz`, `true` — Lambda Web Adapter |
 | `Dockerfile` | `PORT` | `8000` unless overridden |
-| `docker-compose.yml` | `DATABASE_URL`, `SECRET_KEY`, `SESSION_HTTPS_ONLY` | From the host shell, else `sqlite:///./app.db`, `dev-secret-change-me`, `false` |
+| `docker-compose.yml` | `DATABASE_URL`, `SECRET_KEY`, `SESSION_HTTPS_ONLY` | From the host shell, else `sqlite:///./app.db`, empty (so a generated dev key), `false` |
 | `env.json` (never committed) | the three variables above | The Lambda function's environment; see [deployment.md](deployment.md) |
 
 ## Known debt

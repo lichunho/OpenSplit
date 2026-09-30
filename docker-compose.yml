@@ -6,7 +6,8 @@ services:
     environment:
       # Read from the host shell if set; otherwise fall back to local
       # defaults. No secret is baked into the image itself — these are
-      # runtime env vars, not Dockerfile ENV/ARG.
+      # runtime env vars, not Dockerfile ENV/ARG. An empty SECRET_KEY makes
+      # config.py generate a dev key; with Postgres it refuses to start.
       DATABASE_URL: ${DATABASE_URL:-sqlite:///./app.db}
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      SECRET_KEY: ${SECRET_KEY:-}
       SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-false}

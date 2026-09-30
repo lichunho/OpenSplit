@@ -25,8 +25,10 @@ DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{_DEFAULT_SQLITE_PATH}
 # Dev convenience: generate a throwaway key at startup when none is set, so
 # `uvicorn app.main:app --reload` works with no .env. Every restart gets a new
 # key, which invalidates existing sessions — fine in dev, never used in prod
-# because the deployed function sets a real SECRET_KEY.
-SECRET_KEY = os.environ.get("SECRET_KEY", secrets.token_urlsafe(32))
+# because the deployed function sets a real SECRET_KEY. `or` rather than a
+# get() default so an empty value (docker compose with SECRET_KEY unset) counts
+# as missing.
+SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32)
 
 # A Secure cookie is not returned by the browser over plain http://, so
 # https_only=True would silently break identify on local dev (127.0.0.1 has
@@ -43,4 +45,13 @@ if DATABASE_URL.startswith("postgres") and not SESSION_HTTPS_ONLY:
     raise RuntimeError(
         "SESSION_HTTPS_ONLY must be 'true' when DATABASE_URL points at Postgres; "
         "without it the session cookie ships without the Secure flag."
+    )
+
+# Same reasoning for the session key: on a deploy, a missing SECRET_KEY would
+# fall back to the per-process key above, so every Lambda instance would sign
+# cookies differently and sign users out at random.
+if DATABASE_URL.startswith("postgres") and not os.environ.get("SECRET_KEY"):
+    raise RuntimeError(
+        "SECRET_KEY must be set when DATABASE_URL points at Postgres; "
+        "the generated fallback is for local dev only."
     )

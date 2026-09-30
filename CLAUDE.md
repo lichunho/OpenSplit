@@ -11,7 +11,7 @@ Read [documentation/README.md](documentation/README.md) at session start. Repo c
 ```bash
 python3.13 -m venv .venv && source .venv/bin/activate   # Windows: py -3.13 … && .venv/Scripts/activate
 pip install -r requirements.txt
-pytest                                   # 135 tests; conftest isolates the DB
+pytest                                   # 136 tests; conftest isolates the DB
 pytest tests/test_money.py::test_name    # single test
 uvicorn app.main:app --reload            # http://127.0.0.1:8000
 docker compose up                        # same image on :8000, ephemeral SQLite
@@ -48,7 +48,7 @@ A green local `pytest` proves nothing about these. Details are in [documentation
 
 - Node/npm are not installed, so there is no frontend build step. Everything is served from `app/static/`.
 - `README.md` must keep stating the cold-start behavior (~2.4s idle, ~13s after a new image) and the `create_all`/no-migrations decision, so both read as choices.
-- `SESSION_HTTPS_ONLY=true` is required with a Postgres URL. `config.py` refuses to start without it, by design.
+- `SESSION_HTTPS_ONLY=true` and a non-empty `SECRET_KEY` are required with a Postgres URL. `config.py` refuses to start without them, by design.
 - Lambda redeploys need a **new image tag**. Reusing `:v1` does not pick up a new image.
 - Scope is fixed. Out of scope: payment rails, multi-currency, member rename/delete, percentage splits, multi-payer expenses, notifications. Simplified debts shift between days by nature; don't "fix" the algorithm.
 - The design rationale is in `~/.claude/plans/the-goal-of-this-transient-flamingo.md`.
